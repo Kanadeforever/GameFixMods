@@ -1,12 +1,12 @@
 // ============================================================
-// input_fix.asi v2.2 — 输入崩溃修复
+// CrashFix.asi v2.2 — 输入崩溃修复
 //
 // 修复 GetRawInputDeviceList 的 TOCTOU 缓冲区溢出崩溃
 // 手柄+键盘同时使用时不再崩溃
 //
 // 适用: SoR.exe / SwordOfAlien.exe / Launcher.exe
 // 加载: Ultimate ASI Loader
-// 配置: input_fix.ini (与exe同目录)
+// 配置: CrashFix.ini (与exe同目录)
 // ============================================================
 #include <windows.h>
 #include <stdio.h>
@@ -18,9 +18,9 @@ typedef struct {
     int fix_toctou;     // TOCTOU修复
     int enable_cs;      // 临界区保护
     int debug_log;      // 调试日志
-} InputFixConfig;
+} CrashFixConfig;
 
-static InputFixConfig g_cfg = { 1, 1, 0 };
+static CrashFixConfig g_cfg = { 1, 1, 0 };
 static CRITICAL_SECTION g_cs;
 
 // 原始函数指针
@@ -46,7 +46,7 @@ static void dbg(const char* fmt, ...) {
         buf[len+1] = '\n';
         buf[len+2] = '\0';
     }
-    OutputDebugStringA("[input_fix] ");
+    OutputDebugStringA("[CrashFix] ");
     OutputDebugStringA(buf);
 }
 
@@ -155,16 +155,16 @@ static void LoadConfig(void) {
     GetModuleFileNameA(NULL, path, sizeof(path));
     char* slash = strrchr(path, '\\');
     if (slash) *slash = '\0';
-    strcat_s(path, sizeof(path), "\\input_fix.ini");
+    strcat_s(path, sizeof(path), "\\CrashFix.ini");
 
     if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) return;
 
     char buf[16];
-    if (GetPrivateProfileStringA("InputFix", "FixTOCTOU", "1", buf, sizeof(buf), path))
+    if (GetPrivateProfileStringA("CrashFix", "FixTOCTOU", "1", buf, sizeof(buf), path))
         g_cfg.fix_toctou = (atoi(buf) != 0);
-    if (GetPrivateProfileStringA("InputFix", "EnableCriticalSection", "1", buf, sizeof(buf), path))
+    if (GetPrivateProfileStringA("CrashFix", "EnableCriticalSection", "1", buf, sizeof(buf), path))
         g_cfg.enable_cs = (atoi(buf) != 0);
-    if (GetPrivateProfileStringA("InputFix", "DebugLog", "0", buf, sizeof(buf), path))
+    if (GetPrivateProfileStringA("CrashFix", "DebugLog", "0", buf, sizeof(buf), path))
         g_cfg.debug_log = (atoi(buf) != 0);
 }
 
@@ -177,7 +177,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
         DisableThreadLibraryCalls(hModule);
         LoadConfig();
 
-        dbg("=== input_fix.asi v2.2 ===");
+        dbg("=== CrashFix.asi v2.2 ===");
         dbg("TOCTOU修复=%d 临界区=%d 调试=%d",
             g_cfg.fix_toctou, g_cfg.enable_cs, g_cfg.debug_log);
 
