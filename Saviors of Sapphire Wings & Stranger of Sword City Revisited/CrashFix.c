@@ -155,7 +155,7 @@ static void LoadConfig(void) {
     GetModuleFileNameA(NULL, path, sizeof(path));
     char* slash = strrchr(path, '\\');
     if (slash) *slash = '\0';
-    strcat_s(path, sizeof(path), "\\CrashFix.ini");
+    strcat_s(path, sizeof(path), "\\input_fix.ini");
 
     if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) return;
 
