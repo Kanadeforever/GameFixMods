@@ -1,6 +1,7 @@
-# input_fix.asi
+# CrashFix.asi
 
-修复 SoR.exe / SwordOfAlien.exe / Launcher.exe 的手柄+键盘同时使用时崩溃问题。
+修复 《Saviors of Sapphire Wings / Stranger of Sword City Revisited
+》的 SoR.exe / SwordOfAlien.exe / Launcher.exe 的手柄+键盘同时使用时崩溃问题。
 
 ## 原理
 
@@ -29,14 +30,14 @@ clang -shared -O2 -std=c11 -target x86_64-w64-mingw32 \
 
 ## 使用
 
-1. 将 `input_fix.asi` 和 `input_fix.ini` 放入游戏 exe 所在目录
+1. 将 `CrashFix.asi` 和 `CrashFix.ini` 放入游戏 exe 所在目录
 2. 确保已安装 [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader)
 3. 启动游戏
 
 ## 配置
 
 ```ini
-[InputFix]
+[CrashFix]
 FixTOCTOU=1            ; TOCTOU 缓冲区溢出修复 (1=启用)
 EnableCriticalSection=1 ; 临界区保护 (1=启用)
 DebugLog=0             ; 调试日志 (1=启用, 用 DebugView 查看)
