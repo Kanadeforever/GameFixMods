@@ -1,7 +1,6 @@
 # CrashFix.asi
 
-修复 《Saviors of Sapphire Wings / Stranger of Sword City Revisited
-》的 SoR.exe / SwordOfAlien.exe / Launcher.exe 的手柄+键盘同时使用时崩溃问题。
+修复 SoR.exe / SwordOfAlien.exe / Launcher.exe 的手柄+键盘同时使用时崩溃问题。
 
 ## 原理
 
@@ -24,7 +23,7 @@ clang -shared -O2 -std=c11 -target x86_64-w64-mingw32 \
     -ffunction-sections -fdata-sections \
     -Wl,--gc-sections -Wl,-s \
     -DNDEBUG -D_WIN32_WINNT=0x0601 \
-    -o input_fix.asi input_fix.c \
+    -o CrashFix.asi CrashFix.c \
     -luser32 -lkernel32
 ```
 
