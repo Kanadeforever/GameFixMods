@@ -44,7 +44,7 @@ github/
 
 ## 兼容性
 
-- BinaryDomain.exe (零售版Update 1主程序)
+- [BinaryDomain.exe (零售版Update 1主程序)](https://community.pcgamingwiki.com/files/file/3113-binary-domain-official-update-1/)
   - MD5: 91685AB31388B5D8B5FFA106F766509B
   - SHA1: 1309E7F31B9D6713935203FE9C7CFEC79D9B03E5
   - CRC32: 69FDD4C1
