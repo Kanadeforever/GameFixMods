@@ -1,0 +1,3 @@
+/* 嵌入 SRLoaderHook.dll */
+#define IDR_HOOK_DLL 100
+IDR_HOOK_DLL RCDATA "SRLoaderHook.dll"

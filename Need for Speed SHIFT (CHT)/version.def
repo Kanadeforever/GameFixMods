@@ -1,0 +1,9 @@
+EXPORTS
+  GetFileVersionInfoSizeA=P_GetFileVersionInfoSizeA
+  GetFileVersionInfoSizeW=P_GetFileVersionInfoSizeW
+  GetFileVersionInfoA=P_GetFileVersionInfoA
+  GetFileVersionInfoW=P_GetFileVersionInfoW
+  VerQueryValueA=P_VerQueryValueA
+  VerQueryValueW=P_VerQueryValueW
+  VerInstallFileA=P_VerInstallFileA
+  VerFindFileA=P_VerFindFileA
