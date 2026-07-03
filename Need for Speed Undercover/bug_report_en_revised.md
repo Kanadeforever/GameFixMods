@@ -215,4 +215,4 @@ SHA-256: d00bd8eaacebbb5a3ee35e0cbe75f9c25a40b3b888855b7f9ada7c45c1baaf46
 
 The binary also contains save-system error strings such as `WE WILL CRASH`, but those strings alone do not prove the root cause. The confirmed root cause is the callback entry count exceeding the fixed 8-entry capacity.
 
-Reported by community debugging using x64dbg and static analysis.
+Reported by debugging using x64dbg and static analysis.
