@@ -6,3 +6,7 @@
 按`Numpad 0`（小键盘0）开关bloom，默认关闭bloom效果
 
 详细和注释等之后再说
+
+# 依赖
+
+需要minhook，需要版本的源码在src文件夹里，minhook的licence在其文件夹内，随其分发。
