@@ -215,4 +215,4 @@ SHA-256：d00bd8eaacebbb5a3ee35e0cbe75f9c25a40b3b888855b7f9ada7c45c1baaf46
 
 该二进制中也存在诸如 `WE WILL CRASH` 的存档系统错误字符串，但这些字符串本身不能证明根因。已确认的根因是 callback entry count 超过固定 8-entry 容量。
 
-报告由社区通过 x64dbg 调试和静态分析定位。
+报告由DeepSeek与ChatGPT通过 x64dbg 调试和静态分析定位。
