@@ -1,7 +1,7 @@
-// RisenGlyphSheetPatchASI.cpp
+// RisenGlyphSheetPatch.cpp
 // 作用：运行时修补 Risen 2023 版 Engine.dll 的 eCGlyphSheet 贴图尺寸，避免中文 glyph atlas 过小导致缺字/叠字/破图。
 // 编译：x64 Developer Command Prompt 中执行：
-//   cl /LD /O2 /EHsc /std:c++17 /utf-8 RisenGlyphSheetPatchASI.cpp /Fe:RisenGlyphSheetPatch.asi
+//   cl /LD /O2 /EHsc /std:c++17 /utf-8 RisenGlyphSheetPatch.cpp /Fe:RisenGlyphSheetPatch.asi
 // 使用：把 RisenGlyphSheetPatch.asi 和 RisenGlyphSheetPatch.ini 放到 ASI Loader 会加载的位置。
 
 #define WIN32_LEAN_AND_MEAN
