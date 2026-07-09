@@ -1,0 +1,3 @@
+LIBRARY "000_pop1_chs_compat"
+EXPORTS
+    InitializeASI=_InitializeASI@0
