@@ -44,7 +44,7 @@ Some game fix/hack mods.
 - [Dead Space Optimization](https://github.com/Kanadeforever/DSOpt)
   - 死亡空间原版现代化体验优化，借鉴老外的放大字幕的ct表，重写成让字幕随分辨率自动放大，并在这基础上对一些能解决的老bug和10核以上cpu崩溃的问题做了修复，以及为游戏支持了无边框窗口。
 
-## [Ar Nosurge DX / アルノサージュ ～生まれいずる星へ祈る詩～ DX](https://store.steampowered.com/app/1477490)
+## [アルノサージュ ～生まれいずる星へ祈る詩～ DX / Ar Nosurge DX](https://store.steampowered.com/app/1477490)
 
 - [Ar Nosurge DX PC Fix](https://github.com/Kanadeforever/ArNosurgePCFix)
   - 帮见钱眼开的暗耻和懒狗Gust擦屁股的玩意。修复游戏在3D场景下，CPU的核心越多CPU100%全功率运行的恶性BUG。
