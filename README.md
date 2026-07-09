@@ -14,8 +14,7 @@ Some game fix/hack mods.
 ## [塵骸魔京/Jingai Makyo](https://github.com/Kanadeforever/GameFixMods/releases/tag/Jingai-Makyo)
 - [新系统汉化不能用鼠标修复（用DeltaPatcher打补丁）](https://github.com/Kanadeforever/GameFixMods/releases/download/Jingai-Makyo/NitroSystemFix.zip)
   - 能用就行了，要啥自行车，除了我这么多年还有谁做这个？指望不知道什么时候会出现的大佬？
-  - 有些小屁孩只知道输出情绪不先定位自己的问题，到头来还是自己的问题反而怪做的东西不行，说的好像做的时候没在不同环境下测试似的。
-  - 不爽可以不用，虚拟机欢迎你，不爽上面这番话又不爽虚拟机大可以花钱买token自己再干一版。不爽又要用那活该你不爽，我可开心了~
+  - 不爽可以不用，虚拟机欢迎你。
 
 ## [戦女神/Ikusa Megami](https://github.com/Kanadeforever/GameFixMods/releases/tag/IkusaMegami)
 - 新的免弹窗补丁
