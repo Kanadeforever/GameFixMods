@@ -56,10 +56,18 @@ std::atomic<bool> g_installed{false};
 /// 原始 eCFont::Create 函数（trampoline）
 eCFontCreateFn g_original_eCFont_Create = nullptr;
 
+/// 高度→缩放倍数 覆盖表（从 INI [HeightOverride] 节读取）
+/// 键 = |lfHeight|（绝对值高度），值 = 缩放倍数
+struct {
+    int heights[64];      ///< 绝对值高度值列表
+    double scales[64];    ///< 对应缩放倍数
+    int count;            ///< 有效条目数
+} g_heightOverrides;
+
 /// 配置结构体，从 RisenFontScale.ini 加载
 struct Config {
     int enabled = 1;          ///< 是否启用字体缩放
-    double scale = 1.25;      ///< 缩放倍数（1.25 = 放大 25%）
+    double scale = 1.25;      ///< 整体缩放倍数（1.25 = 放大 25%）
     int minAbsHeight = 6;     ///< 缩放后最小字号（绝对值）
     int maxAbsHeight = 96;    ///< 缩放后最大字号（绝对值）
     int logEnabled = 1;       ///< 是否启用日志（1=启用 0=禁用）
@@ -123,13 +131,14 @@ void EnsureDefaultIni(const wchar_t* iniPath) {
     FILE* f = _wfsopen(iniPath, L"w", _SH_DENYNO);
     if (!f) return;
     fputs(
-        "; RisenFontScale ASI\n"
-        "; 修改 Scale 后重启游戏；已经创建/缓存的字体不会实时变大。\n"
+        "; RisenFontScale ASI — 字体缩放\n"
+        "; [HeightOverride] 格式：名称=高度:倍数\n"
+        "; 倍数=0 时表示走全局 Scale。未列出的高度也走 Scale。\n"
         "[FontScale]\n"
         "; 开启/关闭字体缩放功能\n"
         "Enabled=1\n"
-        "; 字体缩放倍数，1.25 = 放大 25%\n"
-        "Scale=1.25\n"
+        "; 整体字体缩放倍数，未在 [HeightOverride] 中列出的高度使用此值\n"
+        "Scale=1.5\n"
         "; 缩放后最小字号（绝对值）\n"
         "MinAbsHeight=6\n"
         "; 缩放后最大字号（绝对值）\n"
@@ -137,7 +146,17 @@ void EnsureDefaultIni(const wchar_t* iniPath) {
         "; 开启/关闭日志记录（1=开启 0=关闭）\n"
         "LogEnabled=1\n"
         "; 最多记录前 N 次字体创建（设为 0 关闭详细日志）\n"
-        "LogFirstN=64\n",
+        "LogFirstN=64\n"
+        "\n"
+        "[HeightOverride]\n"
+        "; 信息（任务详情、道具详情）、字幕、选项、存档详情等\n"
+        "Detail=14:0\n"
+        "; 主菜单、设置、读盘提示、路牌/拾取提示、角色名等\n"
+        "Menu=16:0\n"
+        "; 进游戏按A开始、存档标题等\n"
+        "StartPrompt=19:0\n"
+        "; 未知字体\n"
+        "UnknowFont=32:0\n",
         f);
     fclose(f);
 }
@@ -167,6 +186,25 @@ void LoadConfig() {
     // 边界保护
     if (g_cfg.minAbsHeight < 1) g_cfg.minAbsHeight = 1;
     if (g_cfg.maxAbsHeight < g_cfg.minAbsHeight) g_cfg.maxAbsHeight = g_cfg.minAbsHeight;
+
+    // 读取 [HeightOverride] 节：按绝对值高度独立配缩放倍数
+    g_heightOverrides.count = 0;
+    wchar_t sectionData[4096];
+    GetPrivateProfileSectionW(L"HeightOverride", sectionData, 4096, ini);
+    for (wchar_t* p = sectionData; *p && g_heightOverrides.count < 64; p += wcslen(p) + 1) {
+        // 每行格式: "名称=高度:倍数"，例如 "PickupTip=14:2.0"
+        wchar_t* eq = wcschr(p, L'=');
+        if (!eq) continue;
+        wchar_t* colon = wcschr(eq + 1, L':');
+        if (!colon) continue;
+        int h = _wtoi(eq + 1);
+        double sc = wcstod(colon + 1, nullptr);
+        if (h > 0 && h < 257 && sc >= 0 && sc < 1000.0) {
+            g_heightOverrides.heights[g_heightOverrides.count] = h;
+            g_heightOverrides.scales[g_heightOverrides.count] = sc;
+            g_heightOverrides.count++;
+        }
+    }
 
     // 只有日志启用时才写这一行，避免刚启动时 Log 空指针崩溃
     if (g_log) {
@@ -280,11 +318,11 @@ bool LooksLike_eCFont_Create_2023(const unsigned char* p) {
 // 字体缩放核心逻辑
 // ============================================================
 
-/// 对给定的 LOGFONT 高度应用缩放，并钳制到 [minAbsHeight, maxAbsHeight] 范围。
+/// 对给定的高度值应用指定倍数的缩放，并钳制到 [minAbsHeight, maxAbsHeight]。
 /// 处理正负号（正=字符高度，负=字符宽度，GameMaker 习惯用负值）。
 /// 返回缩放后的高度值。
-int ScaleHeight(int h) {
-    if (!g_cfg.enabled || h == 0) return h;
+int ScaleHeightWith(int h, double factor) {
+    if (!g_cfg.enabled || h == 0 || factor <= 0.01) return h;
 
     const int sign = h < 0 ? -1 : 1;
     int absH = h < 0 ? -h : h;
@@ -292,7 +330,7 @@ int ScaleHeight(int h) {
     // 忽略超出钳制范围的异常值（不是 GUI 字体）
     if (absH < 1 || absH > 256) return h;
 
-    int scaled = static_cast<int>(std::lround(static_cast<double>(absH) * g_cfg.scale));
+    int scaled = static_cast<int>(std::lround(static_cast<double>(absH) * factor));
     if (scaled < g_cfg.minAbsHeight) scaled = g_cfg.minAbsHeight;
     if (scaled > g_cfg.maxAbsHeight) scaled = g_cfg.maxAbsHeight;
     return sign * scaled;
@@ -302,28 +340,46 @@ int ScaleHeight(int h) {
 // Hook 函数：拦截 eCFont::Create
 // ============================================================
 
+/// 根据绝对值高度查找对应的缩放倍数。
+/// 根据绝对值高度查找对应的缩放倍数。
+/// 优先查 [HeightOverride] 节，找不到或倍数为 0 则返回整体 Scale。
+double GetScaleForHeight(int absH) {
+    for (int i = 0; i < g_heightOverrides.count; ++i) {
+        if (g_heightOverrides.heights[i] == absH) {
+            if (g_heightOverrides.scales[i] > 0.001)
+                return g_heightOverrides.scales[i];
+            break;
+        }
+    }
+    return g_cfg.scale;
+}
+
 /// 替换 eCFont::Create 的 Hook 函数。
-/// 复制 LOGFONTW，应用缩放，然后调用原始函数。
+/// 复制 LOGFONTW，按绝对值高度查 [HeightOverride] 取缩放倍数，
+/// 找不到则用整体 Scale，然后调用原始函数。
 unsigned char __fastcall Hook_eCFont_Create(void* self, const LOGFONTW* logfont) {
     if (!g_original_eCFont_Create || !logfont) {
         return g_original_eCFont_Create ? g_original_eCFont_Create(self, logfont) : 0;
     }
 
-    // 复制原始 LOGFONTW，在副本上修改
     LOGFONTW lf = *logfont;
     const int oldHeight = lf.lfHeight;
-    lf.lfHeight = ScaleHeight(lf.lfHeight);
 
-    // 日志记录（受 logFirstN 限制）
+    // 计算绝对值高度，查找对应缩放倍数
+    int absH = oldHeight < 0 ? -oldHeight : oldHeight;
+    double activeScale = GetScaleForHeight(absH);
+
+    lf.lfHeight = ScaleHeightWith(lf.lfHeight, activeScale);
+
+    // 日志记录
     LONG n = InterlockedIncrement(&g_logCount);
     if (g_cfg.logEnabled && g_cfg.logFirstN > 0 && n <= g_cfg.logFirstN) {
         char face[LF_FACESIZE * 4]{};
         WideCharToMultiByte(CP_UTF8, 0, lf.lfFaceName, -1, face, sizeof(face), nullptr, nullptr);
-        Log("eCFont::Create #%ld: height %d -> %d weight=%ld charset=%u face='%s'",
-            n, oldHeight, lf.lfHeight, lf.lfWeight, static_cast<unsigned>(lf.lfCharSet), face);
+        Log("eCFont::Create #%ld: height %d -> %d scale=%.2f absH=%d face='%s'",
+            n, oldHeight, lf.lfHeight, activeScale, absH, face);
     }
 
-    // 调用原始函数（使用缩放后的 LOGFONTW）
     return g_original_eCFont_Create(self, &lf);
 }
 
