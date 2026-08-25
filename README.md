@@ -27,6 +27,11 @@ Some game fix/hack mods.
 - [Remove Bloom Patch](https://github.com/Kanadeforever/GameFixMods/releases/download/SOPFFO/SOPFFO_REMOVE_BLOOM.zip)
   - 忘了原始的bloom地址是N网还是B站的佬做的，记得好像是N网，但现在地址找不到，疑似被删的干净了，我就把手头的这份移植成了asi插件，方便以后万一游戏或者系统变动了用不了了还能有源码救回来。
 
+## [Sword Art Online Re Hollow Fragment](https://github.com/Kanadeforever/GameFixMods/releases/tag/SAOHF) ([Steam Link](https://store.steampowered.com/app/638650))
+- [SAOHF Enhance](https://github.com/Kanadeforever/GameFixMods/releases/download/SAOHF/SAOHF_Enhance_v1.0_release.zip)
+  - 为中英文恢复日文独占的技能CD/SP机制切换
+  - 为中日文调整手柄为A确定B取消。
+
 # Other Game Patch
 
 ## General
