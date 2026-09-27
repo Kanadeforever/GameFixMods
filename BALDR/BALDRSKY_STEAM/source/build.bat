@@ -66,6 +66,8 @@ if errorlevel 1 (
 
 REM 把最终 DLL 复制到包根 release 目录。  
 REM 这里不会复制中间 obj/lib，因为普通用户只需要 d3d9.dll。  
+
+if not exist "..\release" mkdir "..\release"
 copy /y "build\d3d9.dll" "..\release\d3d9.dll" >nul
 copy /y "templete\d3d9.ini" "..\release\d3d9.ini" >nul
 if errorlevel 1 (
