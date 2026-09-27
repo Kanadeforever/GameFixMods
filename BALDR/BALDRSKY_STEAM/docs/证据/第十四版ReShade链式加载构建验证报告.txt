@@ -1,0 +1,54 @@
+BALDR SKY Win11 Fix v0.1-test14 ReShade 链式加载构建验证报告
+
+一、功能目标
+- 本兼容层继续固定占用游戏目录 d3d9.dll。
+- 可选 ReShade 32 位 DLL 改名为 ReShade32.dll，放在游戏目录，不使用子目录。
+- EnableReShade 与 Backend 独立。
+- ReShade 6.7+ 使用官方 [PROXY] / EnableProxyLibrary / ProxyLibrary 机制继续链到最终 Native/DXVK 后端。
+
+二、调用链
+ReShade OFF：
+BaldrSky.exe -> d3d9.dll(本兼容层) -> Native / d3d9_backend.dll
+
+ReShade ON：
+BaldrSky.exe -> d3d9.dll(本兼容层) -> ReShade32.dll -> Native / d3d9_backend.dll
+
+三、配置写入范围
+兼容层只维护 ReShade.ini：
+[PROXY]
+EnableProxyLibrary=1
+ProxyLibrary=<最终后端绝对路径>
+
+其他 ReShade preset、shader、input 等配置不重写。
+
+四、安全策略
+- ReShade32.dll 缺失：回退最终后端。
+- ReShade.ini PROXY 写入失败：回退最终后端。
+- ReShade32.dll 无法加载：回退最终后端。
+- ReShade32.dll 无 Direct3DCreate9 导出：回退最终后端。
+- Backend=2 且 d3d9_backend.dll 本身不可用：保持 Backend=2 原语义，不回退 Native。
+
+五、构建验证
+- 架构：PE32 / Intel i386
+- 普通 Import Directory：为空
+- 导出：仅 Direct3DCreate9
+- DYNAMIC_BASE：启用
+- NX_COMPAT：启用
+- 同一最终源码独立重建后，与 release/d3d9.dll 逐字节一致
+- DLL SHA-256：90dc9238cd3a915f3a825e298f71074e1127c013fbaf2cd22911d4e3bb4be556
+
+六、现有核心修复回归范围
+ReShade 只改变 D3D9 转发层，不改变：
+- SteamFix 语义签名和三处补丁算法；
+- VideoOverlayFix；
+- Steam InstallScriptFix；
+- HighDpiFix；
+- PixelBoundaryFix 内联补丁/异常回退算法。
+
+七、离线复核
+- 中文 SteamFix：PASS
+- 英文 SteamFix：PASS
+- 中文 PixelBoundaryFix：PASS
+
+八、实机验证状态
+ReShade + Native、ReShade + DXVK 尚待中文版实机验证。

@@ -1,0 +1,32 @@
+BALDR SKY v0.1-test12 PixelBoundaryFix 内联跳板机器码自检
+日期：2026-09-27
+
+为避免“C++ 逻辑看起来正确，但生成的动态 x86 跳板字节错误”，开发侧用代表性运行地址构造了与运行时生成器完全相同的跳板，并反汇编核对。
+
+代表性反汇编：
+
+30000000  0F B7 13             movzx edx,word ptr [ebx]
+30000003  51                   push ecx
+30000004  8B 4C 24 3C          mov ecx,[esp+3Ch]
+30000008  85 C9                test ecx,ecx
+3000000A  74 0A                je normal
+3000000C  8B 49 04             mov ecx,[ecx+4]
+3000000F  83 E9 04             sub ecx,4
+30000012  3B F9                cmp edi,ecx
+30000014  74 08                je skip
+normal:
+30000016  59                   pop ecx
+30000017  8B 0F                mov ecx,[edi]
+30000019  E9 ...               jmp 006C1B9D
+skip:
+3000001E  59                   pop ecx
+3000001F  FF 05 <counter>       inc dword ptr [inlineSkipCount]
+30000025  E9 ...               jmp 006C1C14
+
+核对结论：
+1. 正常路径完整重放被覆盖的两条原指令，再返回 0x006C1B9D。
+2. 越界路径不会执行 mov ecx,[edi]，因此不会先触发 AV。
+3. 越界路径恢复 ECX，随后跳到 test11 已实机验证的原函数 add edi,4。
+4. push ecx 以后目标对象原 [ESP+38h] 自动改为 [ESP+3Ch]，偏移补偿正确。
+5. 跳板热路径不调用 C/C++ 日志函数，不触碰 x87/XMM。
+6. 运行时实际地址不是固定 0x30000000；这里仅用于机器码结构自检。

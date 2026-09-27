@@ -1,0 +1,8 @@
+文件：/mnt/data/t11/cn/BaldrSky.bin
+像素混合特征命中数：1
+- signature raw=0x002C0F98 VA=0x006C1B98 section=.text fault=0x006C1B9B write+inc候选=1
+  安全续接 add edi,4 = 0x006C1C14
+结果：PASS
+特征起点：0x006C1B98
+故障读取：0x006C1B9B
+安全续接：0x006C1C14

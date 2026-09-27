@@ -10,6 +10,7 @@
 - 默认启用高 DPI 缩放兼容。
 - 支持 Windows 原生 Direct3D 9。
 - 支持可选 DXVK x32 后端。
+- 支持可选加载 ReShade。
 - 不需要设置 Windows 兼容模式、管理员权限、禁用全屏优化等 EXE 属性。
 
 ## 安装
@@ -54,33 +55,56 @@ Baldr Sky\
 
 补丁检测到 `d3d9_backend.dll` 后会自动使用它；删除该文件即可恢复 Windows 原生 Direct3D 9。
 
+## 使用 ReShade
+
+由于本修复补丁占用了d3d9.dll，并且可能需要reshade，所以对其做了简单的支持。
+
+如果需要 reshade：
+
+1. 准备 **32 位 / x86** reshede 的 dll ，。
+2. 重命名为：
+
+```text
+reshade32.dll
+```
+
+3. 放到游戏目录。
+
+最终结构：
+
+```text
+Baldr Sky\
+├─ BaldrSky.exe
+├─ d3d9.dll
+├─ d3d9.ini
+└─ reshade32.dll
+```
+
+在 ini 中激活选项后，补丁检测到 `reshade32.dll` 后会自动使用它；不需要可直接在 ini 中关闭对应选项。
+
 ## 配置
 
 配置文件为 `d3d9.ini`。
 
-主要选项：
+所有选项：
 
 ```ini
 [Compatibility]
-EnableSteamFix=1
-EnableVideoOverlayFix=1
+EnableSteamInstallScriptFix=1
 EnableHighDpiFix=1
-EnableCrashDiagnostics=0
+
+[Graphics]
+Backend=0
+EnableReShade=1
+
+[Diagnostics]
+EnableLog=0
+LogLevel=3
+EnableCrashDiagnostics=1
+
 ```
 
-说明：
-
-- `EnableSteamFix=1`  
-  修复 Steam 移植代码中的启动崩溃问题。
-
-- `EnableVideoOverlayFix=1`  
-  自动处理 `Direct3D\Shims\EnableOverlays`，修复部分视频只有声音、画面黑屏的问题。
-
-- `EnableHighDpiFix=1`  
-  启用高 DPI 缩放兼容。若出现窗口或鼠标坐标异常，可改为 `0` 测试。
-
-- `EnableCrashDiagnostics=0`  
-  默认关闭详细崩溃诊断。遇到新问题时可改为 `1` 后重新运行，并保留日志。
+说明见 ini 内。
 
 ## 日志
 
@@ -98,8 +122,11 @@ d3d9.log
 
 - 中文 Steam 版：Windows 原生 Direct3D 9 可正常进入游戏。
 - 英文 Steam 版：DXVK x32 可正常进入游戏。
-- 英文版 SteamFix 特征码可正确识别并应用。
 - 视频 Overlay 修复可正确把当前游戏对应的 `EnableOverlays` 保持为 `0`。
+
+待验证：
+
+- 英文版 SteamFix 特征码可正确识别并应用。
 
 ## 注意
 

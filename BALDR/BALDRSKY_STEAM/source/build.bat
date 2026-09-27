@@ -3,7 +3,7 @@ chcp 65001 >nul
 setlocal EnableExtensions
 
 REM ============================================================================  
-REM BALDR SKY Steam Win11 兼容层 v0.1-test9 - 开发者一键构建脚本  
+REM BALDR SKY Steam Win11 兼容层 构建脚本  
 REM ============================================================================  
 REM 重要：普通用户不需要运行这个脚本。  
 REM release\d3d9.dll 已经由项目开发侧预编译并做过 PE32/x86 检查。  
@@ -75,7 +75,6 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-
 
 echo [成功] Win32/x86 d3d9.dll 已生成到 release 目录。  
 echo [提醒] 正式发布前仍应使用 dumpbin /headers /exports 或 llvm-objdump 检查架构、导出表和导入表。  

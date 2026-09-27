@@ -1,0 +1,47 @@
+BALDR SKY test11 前——中文版字体像素边界崩溃证据摘要
+日期：2026-09-27
+
+【用户实机复现 1】
+ExceptionAddress=0x006C1B9B
+AccessType=READ
+AccessAddress=0x2455FFFC
+EDI=0x2455FFFC
+
+【用户实机复现 2】
+ExceptionAddress=0x006C1B9B
+AccessType=READ
+AccessAddress=0x1C06FFFC
+EDI=0x1C06FFFC
+
+【用户实机复现 3：存档界面移动鼠标/切换存档槽快速触发并实际崩溃】
+ExceptionAddress=0x006C1B9B
+AccessType=READ
+AccessAddress=0x0149FFFC
+EDI=0x0149FFFC
+ESP=0x0019F4D4
+[ESP+0x38]=0x095D6A20（静态栈布局对应目标绘图对象保存副本）
+
+【中文版 BaldrSky.bin 静态反汇编】
+006C1B98  0F B7 13    movzx edx,word ptr [ebx]
+006C1B9B  8B 0F       mov ecx,dword ptr [edi]       <- 实机故障
+...
+006C1C12  89 1F       mov dword ptr [edi],ebx
+006C1C14  83 C7 04    add edi,4                     <- test11 安全续接
+
+EDI 在进入循环前来自：
+006C1ACC  mov edi,dword ptr [目标绘图对象+4]
+...
+006C1B15  lea edi,[edi+eax*4]
+
+【离线特征扫描】
+像素混合特征命中数=1
+signature=0x006C1B98
+fault=0x006C1B9B
+skip=0x006C1C14
+结果=PASS
+
+【英文版说明】
+用户新提供的 BaldrSky_en.zip 内旧日志按用户要求忽略。
+英文磁盘 EXE 主 .text 为封装/加密状态，没有明文 BaldrSky.bin，不能直接离线反汇编该函数。
+此前独立实机记录的英文故障 EIP=0x006C1EBB，与中文版故障点相差 0x320，且寄存器/栈/...FFFC 形态高度一致。
+test11 英文兼容依靠运行时解包后特征扫描；非唯一命中自动拒绝启用。

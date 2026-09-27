@@ -1,0 +1,37 @@
+BALDR SKY Win11 Fix v0.1-test13 配置精简重构说明
+日期：2026-09-27
+
+本版没有改变已经通过实机验证的核心修复算法，主要收敛发布配置和诊断行为。
+
+一、永久开启并从 INI 删除的核心修复
+- SteamFix
+- VideoOverlayFix
+- PixelBoundaryFix
+
+理由：
+- SteamFix：Steam 版启动必需；关闭会重新暴露已确认的 Steam 移植错误。
+- VideoOverlayFix：长期高频视频黑屏问题，修复范围只针对当前 BaldrSky.exe。
+- PixelBoundaryFix：test11/test12 已实机证明是正常 UI 中高频触发的真实稳定性缺陷；test12 至少拦截 326 次。
+
+二、日志默认策略
+- EnableLog=0
+- LogLevel=3
+- EnableCrashDiagnostics=1
+
+普通用户默认不生成 d3d9.log。
+遇到问题时，只需要把 EnableLog 改为 1，即自动获得最详细日志和完整普通 AV 诊断。
+
+三、CrashDiagnostics 与核心安全回退解耦
+- 纯诊断 VEH/VCH：只有 EnableLog=1 且 EnableCrashDiagnostics=1 时安装。
+- PixelBoundaryFix 内联安装失败：无论 EnableLog/EnableCrashDiagnostics 如何，仍自动安装 test11 精确异常恢复。
+
+四、进一步移除的普通配置
+- OverlayGuardIntervalMs 不再放进 INI，固定内部 500ms。
+
+五、仍保留的用户配置
+- EnableSteamInstallScriptFix
+- EnableHighDpiFix
+- Backend
+- EnableLog
+- LogLevel
+- EnableCrashDiagnostics

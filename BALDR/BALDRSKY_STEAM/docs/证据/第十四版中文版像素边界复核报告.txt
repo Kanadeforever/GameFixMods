@@ -1,0 +1,12 @@
+文件：/mnt/data/cn/BaldrSky.bin
+像素混合核心特征命中数：1
+- signature raw=0x002C0F98 VA=0x006C1B98 section=.text fault=0x006C1B9B 目标基址来源候选=1 安全续接候选=1
+  目标对象来源：0x006C1AC8；栈偏移=0x38
+  正常返回点：0x006C1B9D
+  安全续接点：0x006C1C14
+结果：PASS
+内联补丁点：0x006C1B98
+故障读取点：0x006C1B9B
+正常返回点：0x006C1B9D
+越界像素续接：0x006C1C14
+目标对象栈偏移：0x38

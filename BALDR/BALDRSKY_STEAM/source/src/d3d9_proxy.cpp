@@ -1,4 +1,4 @@
-// BALDR SKY Steam Win11 Fix / D3D9 Proxy v0.1-test9
+// BALDR SKY Steam Win11 Fix / D3D9 Proxy v0.1-test14
 // ============================================================================
 // 这一版同时解决两个上一轮已经明确的问题：
 //
@@ -26,17 +26,65 @@
 //    - 如果没有：自动加载 Windows 系统原生 32 位 d3d9.dll。
 //    同一份修复 DLL 因此既支持原生 DX9，也支持 DXVK。
 //
-// 4. test9 新增“高 DPI 缩放兼容”。
+// 4. 高 DPI 缩放兼容。
 //    默认把 BALDR SKY 设置为 System DPI Aware，等价于告诉 Windows：
 //    “这个程序自己处理系统 DPI，不要再对它做传统 DPI 虚拟化放大”。
 //    这里故意不用 Per-Monitor V2，因为 BALDR SKY 是 2009 年固定像素 UI，
 //    原程序没有针对 WM_DPICHANGED / 跨显示器 DPI 切换进行过设计。
 //    System DPI Aware 对老 D3D9 游戏更保守；用户仍可在 INI 里完全关闭。
 //
-// 5. test9 将轻量 VEH/VCH 崩溃诊断改为“默认关闭、可在 INI 打开”。
-//    原因不是删除诊断能力，而是 test8 已经证明游戏和 DXVK/系统组件可能产生
-//    能被自身处理的 first-chance 异常。正式候选默认记录这些异常反而容易误导。
-//    将来若中文版或英文版真的再次出现退出问题，只需把 INI 诊断开关改回 1。
+// 5. Steam InstallScript 静默净化。
+//    Steam 发行包的 install.vdf 会在 Steam 启动游戏之前向：
+//      HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers
+//    写入当前 BaldrSky.exe = "~ DPIUNAWARE VISTARTM"。
+//    这两个 AppCompat token 会在进程创建阶段强制 DPI Unaware + Vista 兼容层，
+//    因而会压过 test9 的高 DPI 设置。
+//
+//    正常修复流程不弹窗、不要求用户手动改 Steam 文件，也不在第一次运行时强制重启游戏：
+//      - 静默备份 install.vdf（仅第一次）；
+//      - 只删除 AppCompatFlags\Layers 这一条 Registry 子项；
+//      - 同时从当前用户注册表值中只剔除 DPIUNAWARE / VISTARTM 两个 token；
+//      - 其他用户自己设置的兼容 token 保留；
+//      - Steam 验证/更新如果恢复 install.vdf，下次运行会再次静默净化。
+//      - 唯一例外：如果 install.vdf 整个文件缺失，会按游戏中/英文版本弹一次 MessageBox，
+//        建议用户在 Steam 验证游戏文件完整性；点确定后仍继续启动游戏，不退出。
+//    当前第一次进程如果已经被 Windows 套上 Shim，可能仍维持旧 DPI 行为；
+//    用户已经明确接受这一点，因此兼容层不会打断游戏或额外启动第二实例。
+//
+// 6. 重新整理日志/诊断策略。
+//    正式发布默认 EnableLog=0，因此普通玩家不会生成日志，也不会为了“纯诊断”额外安装 VEH/VCH。
+//    但 INI 里 LogLevel 默认直接设为 3、EnableCrashDiagnostics 默认设为 1：
+//    用户遇到问题时只需要把 EnableLog 改成 1，就会自动得到最详细日志和完整崩溃现场，
+//    不需要再理解第二个、第三个诊断开关。PixelBoundaryFix 的安全回退与日志完全解耦：
+//    即使日志关闭，只要内联补丁意外安装失败，精确异常恢复仍会自动安装并保护游戏。
+//
+// 7. 字体像素左边界前溢修复，并通过实机证明 TargetBase == EDI + 4。
+// 8. 将该修复从“异常发生后的精确恢复”收敛为“异常发生前的内联边界检查”。
+//    中文版在存档界面移动鼠标/切换存档槽时可以稳定触发真实崩溃，故障指令固定为
+//    字体混色循环中的 `mov ecx,[edi]`，而故障地址每次变化但都落在页尾 FFFC。
+//    静态反汇编确认 EDI 来自目标 32bpp 像素缓冲区基址加坐标偏移。
+//    test11 不直接硬编码地址，也不粗暴吞掉 Access Violation；它运行时用机器码结构
+//    唯一定位故障读指令与原函数自己的 `add edi,4` 续接点，随后只有在异常现场严格
+//    满足 `EDI == TargetBase - 4` 时，才把当前越界像素视为被左边界裁剪并跳过。
+//    任何其他越界/坏指针仍继续交给游戏和 Windows 处理，避免把未知 bug 掩盖掉。
+//
+//
+// 9. 将 SteamFix、VideoOverlayFix、PixelBoundaryFix 正式提升为“核心常开功能”。
+//    它们已经分别被证明是 Steam 版启动所必需、老式视频黑屏的高频兼容修复、
+//    以及会在正常 UI/存档界面高频触发的真实字体像素边界崩溃修复。
+//    因此不再给普通用户提供关闭开关，也不再从 INI 读取这三个选项，避免误关核心功能。
+//    INI 只保留真正需要用户选择的项目：InstallScript/DPI、D3D9 后端、日志和诊断。
+//
+// 10. 新增 ReShade 链式加载支持，而且它与 Backend 选择完全独立。
+//     游戏目录中的主入口仍然固定由本兼容层 d3d9.dll 占用。用户如果希望使用 ReShade，
+//     只需把 ReShade 的 32 位 D3D9 DLL 改名为 ReShade32.dll 放在同目录，并设置：
+//       [Graphics]
+//       EnableReShade=1
+//     兼容层会先根据 Backend 选出“最终 D3D9 后端”，然后在加载 ReShade32.dll 之前，
+//     只更新同目录 ReShade.ini 的 [PROXY] / EnableProxyLibrary 与 ProxyLibrary 两个键，
+//     让调用链变成：游戏 -> 本兼容层 -> ReShade32.dll -> Native/DXVK。
+//     这样 ReShade 不再和本兼容层争抢 d3d9.dll 文件名，也不需要子目录。
+//     如果 ReShade32.dll 缺失或加载失败，兼容层会安全回退到原来的直接后端路径。
 //
 // 源码不依赖 Windows SDK、MinGW 头文件或 C/C++ 运行库。
 // 所有 Windows API 都在运行时从 kernel32.dll 的导出表解析。
@@ -75,6 +123,10 @@ typedef void*   (__stdcall *PFN_GetProcAddress)(HMODULE, const char*);
 typedef DWORD   (__stdcall *PFN_GetCurrentThreadId)();
 typedef DWORD   (__stdcall *PFN_VirtualQuery)(const void*, void*, DWORD);
 typedef BOOL    (__stdcall *PFN_VirtualProtect)(void*, DWORD, DWORD, DWORD*);
+// test12 起沿用至 test14 的内联像素边界补丁需要一个很小的可执行跳板。
+// 这里仍然不静态导入 kernel32：VirtualAlloc / FlushInstructionCache 继续按运行时导出解析。
+typedef void*   (__stdcall *PFN_VirtualAlloc)(void*, DWORD, DWORD, DWORD);
+typedef BOOL    (__stdcall *PFN_FlushInstructionCache)(HANDLE, const void*, DWORD);
 typedef void    (__stdcall *PFN_ExitProcess)(UINT);
 typedef BOOL    (__stdcall *PFN_TerminateProcess)(HANDLE, UINT);
 typedef void*   (__stdcall *PFN_SetUnhandledExceptionFilter)(void*);
@@ -83,10 +135,27 @@ typedef BOOL    (__stdcall *PFN_WriteFile)(HANDLE, const void*, DWORD, DWORD*, v
 typedef BOOL    (__stdcall *PFN_FlushFileBuffers)(HANDLE);
 typedef DWORD   (__stdcall *PFN_GetModuleFileNameA)(HMODULE, char*, DWORD);
 typedef UINT    (__stdcall *PFN_GetPrivateProfileIntA)(const char*, const char*, int, const char*);
+// test14 的 ReShade 链式加载只需要改 ReShade.ini 中两个 [PROXY] 键。
+// WritePrivateProfileStringA 会保留同一 INI 中其他 section/key，不需要我们自己重写整个文件。
+typedef BOOL    (__stdcall *PFN_WritePrivateProfileStringA)(const char*, const char*, const char*, const char*);
 typedef DWORD   (__stdcall *PFN_GetLastError)();
 typedef HANDLE  (__stdcall *PFN_CreateThread)(void*, DWORD, DWORD (__stdcall *)(void*), void*, DWORD, DWORD*);
 typedef void    (__stdcall *PFN_Sleep)(DWORD);
 typedef BOOL    (__stdcall *PFN_CloseHandle)(HANDLE);
+
+// test10 的 InstallScript 静默修复需要读写一个很小的文本文件。
+// 这些 API 仍然全部在运行时解析，因此最终 DLL 依旧不需要普通 PE Import Directory。
+typedef BOOL    (__stdcall *PFN_ReadFile)(HANDLE, void*, DWORD, DWORD*, void*);
+typedef DWORD   (__stdcall *PFN_GetFileSize)(HANDLE, DWORD*);
+typedef BOOL    (__stdcall *PFN_CopyFileA)(const char*, const char*, BOOL);
+typedef BOOL    (__stdcall *PFN_MoveFileExA)(const char*, const char*, DWORD);
+typedef BOOL    (__stdcall *PFN_DeleteFileA)(const char*);
+typedef DWORD   (__stdcall *PFN_GetFileAttributesA)(const char*);
+
+// 只有 install.vdf 整个文件缺失时才需要弹出一次提示。
+// 使用 MessageBoxW 而不是 MessageBoxA：这样中文提示直接使用 UTF-16，
+// 不受用户系统 ACP（简中/繁中/英文 Windows）影响，不会因为代码页不同出现乱码。
+typedef int     (__stdcall *PFN_MessageBoxW)(HWND,const wchar_t*,const wchar_t*,UINT);
 
 // 高 DPI 相关 API。
 //
@@ -105,6 +174,7 @@ typedef LONG (__stdcall *PFN_RegCreateKeyExA)(HKEY,const char*,DWORD,char*,DWORD
 typedef LONG (__stdcall *PFN_RegSetValueExA)(HKEY,const char*,DWORD,DWORD,const BYTE*,DWORD);
 typedef LONG (__stdcall *PFN_RegQueryValueExA)(HKEY,const char*,DWORD*,DWORD*,BYTE*,DWORD*);
 typedef LONG (__stdcall *PFN_RegCloseKey)(HKEY);
+typedef LONG (__stdcall *PFN_RegDeleteValueA)(HKEY,const char*);
 
 // Windows VEH（Vectored Exception Handler）注册函数。
 // 我们只观察异常，然后返回 CONTINUE_SEARCH，不会把异常吃掉。
@@ -129,24 +199,42 @@ typedef HRESULT (__stdcall *PFN_CreateDevice)(
 // ----------------------------------------------------------------------------
 // Windows / 文件常量
 // ----------------------------------------------------------------------------
+static const DWORD GENERIC_READ          = 0x80000000UL;
 static const DWORD GENERIC_WRITE         = 0x40000000UL;
 static const DWORD FILE_SHARE_READ       = 0x00000001UL;
 static const DWORD FILE_SHARE_WRITE      = 0x00000002UL;
 static const DWORD CREATE_ALWAYS         = 2UL;
+static const DWORD OPEN_EXISTING         = 3UL;
+static const DWORD MOVEFILE_REPLACE_EXISTING_VALUE = 0x00000001UL;
+static const DWORD MOVEFILE_WRITE_THROUGH_VALUE    = 0x00000008UL;
 static const DWORD FILE_ATTRIBUTE_NORMAL = 0x00000080UL;
 static HANDLE const INVALID_HANDLE_VALUE = (HANDLE)(long)-1;
+static const DWORD INVALID_FILE_ATTRIBUTES_VALUE = 0xFFFFFFFFUL;
+static const DWORD ERROR_FILE_NOT_FOUND_VALUE = 2UL;
+static const DWORD ERROR_PATH_NOT_FOUND_VALUE = 3UL;
+
+// MessageBoxW 标志。没有父窗口是刻意的：兼容层第一次运行时游戏主窗口可能还没有创建。
+// MB_SETFOREGROUND 只是让“文件确实缺失”的一次性提示不至于躲到 Steam 窗口后面；
+// 不使用 MB_TOPMOST，避免长期压住用户其他程序。
+static const UINT MB_OK_VALUE            = 0x00000000U;
+static const UINT MB_ICONWARNING_VALUE   = 0x00000030U;
+static const UINT MB_SETFOREGROUND_VALUE = 0x00010000U;
 
 // VirtualQuery / VirtualProtect 所需常量。
 // 先查询页面再读异常栈，可以避免“为了记录一次异常，记录器自己又读到无效地址”。
 static const DWORD MEM_COMMIT       = 0x00001000UL;
+static const DWORD MEM_RESERVE      = 0x00002000UL;
 static const DWORD PAGE_NOACCESS    = 0x00000001UL;
 static const DWORD PAGE_READWRITE   = 0x00000004UL;
+static const DWORD PAGE_EXECUTE_READ= 0x00000020UL;
 static const DWORD PAGE_GUARD       = 0x00000100UL;
 
 // 注册表常量。HKEY_CURRENT_USER 是 Win32 约定的伪句柄，不需要真的打开“根键”。
 static HKEY const HKEY_CURRENT_USER_VALUE = (HKEY)(ULONG_PTR)0x80000001UL;
 static const DWORD KEY_QUERY_VALUE_VALUE  = 0x00000001UL;
 static const DWORD KEY_SET_VALUE_VALUE    = 0x00000002UL;
+static const DWORD REG_SZ_VALUE           = 1UL;
+static const DWORD REG_EXPAND_SZ_VALUE    = 2UL;
 static const DWORD REG_DWORD_VALUE        = 4UL;
 static const LONG  ERROR_SUCCESS_VALUE    = 0L;
 
@@ -226,6 +314,9 @@ struct MEMORY_BASIC_INFORMATION32 {
 typedef LONG (__stdcall *PFN_UnhandledExceptionFilter)(EXCEPTION_POINTERS32*);
 static const DWORD EXCEPTION_ACCESS_VIOLATION_CODE = 0xC0000005UL;
 static const LONG EXCEPTION_CONTINUE_SEARCH_VALUE = 0;
+// Windows VEH 返回 -1 表示“我们已经修正 CONTEXT，请从新的 EIP 继续执行”。
+// test11 只会在严格确认“目标像素地址恰好等于目标缓冲区基址-4”时使用它。
+static const LONG EXCEPTION_CONTINUE_EXECUTION_VALUE = -1;
 
 // ----------------------------------------------------------------------------
 // 极小 PE / PEB 解析器
@@ -381,17 +472,27 @@ static PFN_GetProcAddress   g_GetProcAddress = 0;
 static PFN_GetCurrentThreadId g_GetCurrentThreadId = 0;
 static PFN_VirtualQuery       g_VirtualQuery = 0;
 static PFN_VirtualProtect     g_VirtualProtect = 0;
+static PFN_VirtualAlloc       g_VirtualAlloc = 0;
+static PFN_FlushInstructionCache g_FlushInstructionCache = 0;
 static PFN_CreateFileA      g_CreateFileA = 0;
 static PFN_WriteFile        g_WriteFile = 0;
 static PFN_FlushFileBuffers g_FlushFileBuffers = 0;
 static PFN_GetModuleFileNameA g_GetModuleFileNameA = 0;
 static PFN_GetPrivateProfileIntA g_GetPrivateProfileIntA = 0;
+static PFN_WritePrivateProfileStringA g_WritePrivateProfileStringA = 0;
 static PFN_GetLastError     g_GetLastError = 0;
 static PFN_CreateThread     g_CreateThread = 0;
 static PFN_Sleep            g_Sleep = 0;
 static PFN_CloseHandle      g_CloseHandle = 0;
+static PFN_ReadFile         g_ReadFile = 0;
+static PFN_GetFileSize      g_GetFileSize = 0;
+static PFN_CopyFileA        g_CopyFileA = 0;
+static PFN_MoveFileExA      g_MoveFileExA = 0;
+static PFN_DeleteFileA      g_DeleteFileA = 0;
+static PFN_GetFileAttributesA g_GetFileAttributesA = 0;
 static PFN_AddVectoredExceptionHandler g_AddVectoredExceptionHandler = 0;
 static PFN_AddVectoredContinueHandler  g_AddVectoredContinueHandler = 0;
+static PFN_RegDeleteValueA  g_RegDeleteValueA = 0;
 static HANDLE               g_log = INVALID_HANDLE_VALUE;
 
 // DllMain 会把“当前这个模块自己的 HMODULE”保存下来。
@@ -403,25 +504,34 @@ static char g_iniPath[520] = {0};
 static char g_logPath[520] = {0};
 static char g_mainExePath[520] = {0};
 
-// 用户配置。默认值都偏向“开箱即用”，但每一项都能在同名 INI 中关闭。
+// 用户配置。
+//
+// 注意：SteamFix、VideoOverlayFix、PixelBoundaryFix 已经在 test13 起被提升为“核心常开功能”，
+// 所以这里故意没有这三个字段。这样既能减少配置分支，也能从代码结构上保证普通用户无法
+// 因为误改 INI 而关闭会直接影响启动/视频/稳定性的基础修复。
 struct UserConfig {
-    int enableSteamFix;
-    int enableVideoOverlayFix;
-    int enableHighDpiFix;     // 1=System DPI Aware；0=完全保持 Windows/外部兼容设置
-    int backendMode;          // 0=自动，1=系统原生，2=强制 d3d9_backend.dll
-    int enableLog;
-    int logLevel;             // 0=仅错误，1=基本，2=详细，3=调试
-    int enableCrashDiagnostics;
-    int overlayGuardIntervalMs;
+    int enableSteamInstallScriptFix; // 1=静默移除 install.vdf 中强制 DPI/Vista AppCompat；0=完全不碰 install.vdf/Layers
+    int enableHighDpiFix;            // 1=System DPI Aware；0=完全保持 Windows/外部兼容设置
+    int backendMode;                 // 0=自动，1=系统原生，2=强制 d3d9_backend.dll
+    int enableReShade;               // 1=在本兼容层与最终 D3D9 后端之间插入同目录 ReShade32.dll；0=直接后端
+    int enableLog;                   // 1=真正创建并写入日志；0=完全不生成日志文件
+    int logLevel;                    // 0=仅错误，1=基本，2=详细，3=调试
+    int enableCrashDiagnostics;      // 只有 EnableLog=1 时才安装“纯诊断” VEH/VCH；像素边界回退不受它影响
 };
 
-// test9 的长期默认值：
-// - SteamFix=1：中英文 Steam 版已经实机/静态确认同一根因；
-// - VideoOverlayFix=1：英文版已实机确认退出后 EnableOverlays 仍保持为 0；
-// - HighDpiFix=1：用户明确要求正式候选默认开启高 DPI 缩放兼容；
-// - CrashDiagnostics=0：正式候选不默认把可恢复 first-chance 异常刷进日志，
-//   真遇到新问题时再由 INI 打开。
-static UserConfig g_cfg = {1,1,1,0,1,2,0,500};
+// test14 的发布默认值：
+// - SteamInstallScriptFix=1：静默移除 Steam 强制写入的 DPIUNAWARE/VISTARTM；
+// - HighDpiFix=1：System DPI Aware；
+// - Backend=0：优先同目录 d3d9_backend.dll，没有则系统原生 D3D9；
+// - EnableReShade=0：默认不插入 ReShade；用户需要时显式开启；
+// - EnableLog=0：普通玩家默认不生成 d3d9.log；
+// - LogLevel=3：一旦用户只把 EnableLog 改成 1，立刻获得最详细日志；
+// - EnableCrashDiagnostics=1：同理，开日志后默认自动记录完整崩溃现场。
+//
+// VideoOverlayFix 的 500ms 守护间隔属于内部实现细节，不再暴露成普通用户配置。
+// 这样 INI 只保留真正需要用户做选择的开关。
+static UserConfig g_cfg = {1,1,0,0,0,3,1};
+static const DWORD OVERLAY_GUARD_INTERVAL_MS = 500;
 static bool g_configLoaded = false;
 
 static bool InitWinApis() {
@@ -438,15 +548,24 @@ static bool InitWinApis() {
     g_GetCurrentThreadId = (PFN_GetCurrentThreadId)ResolveExport(k32, "GetCurrentThreadId");
     g_VirtualQuery       = (PFN_VirtualQuery)ResolveExport(k32, "VirtualQuery");
     g_VirtualProtect     = (PFN_VirtualProtect)ResolveExport(k32, "VirtualProtect");
+    g_VirtualAlloc       = (PFN_VirtualAlloc)ResolveExport(k32, "VirtualAlloc");
+    g_FlushInstructionCache = (PFN_FlushInstructionCache)ResolveExport(k32, "FlushInstructionCache");
     g_CreateFileA        = (PFN_CreateFileA)ResolveExport(k32, "CreateFileA");
     g_WriteFile          = (PFN_WriteFile)ResolveExport(k32, "WriteFile");
     g_FlushFileBuffers   = (PFN_FlushFileBuffers)ResolveExport(k32, "FlushFileBuffers");
     g_GetModuleFileNameA = (PFN_GetModuleFileNameA)ResolveExport(k32, "GetModuleFileNameA");
     g_GetPrivateProfileIntA = (PFN_GetPrivateProfileIntA)ResolveExport(k32, "GetPrivateProfileIntA");
+    g_WritePrivateProfileStringA = (PFN_WritePrivateProfileStringA)ResolveExport(k32, "WritePrivateProfileStringA");
     g_GetLastError       = (PFN_GetLastError)ResolveExport(k32, "GetLastError");
     g_CreateThread       = (PFN_CreateThread)ResolveExport(k32, "CreateThread");
     g_Sleep              = (PFN_Sleep)ResolveExport(k32, "Sleep");
     g_CloseHandle        = (PFN_CloseHandle)ResolveExport(k32, "CloseHandle");
+    g_ReadFile           = (PFN_ReadFile)ResolveExport(k32, "ReadFile");
+    g_GetFileSize        = (PFN_GetFileSize)ResolveExport(k32, "GetFileSize");
+    g_CopyFileA          = (PFN_CopyFileA)ResolveExport(k32, "CopyFileA");
+    g_MoveFileExA        = (PFN_MoveFileExA)ResolveExport(k32, "MoveFileExA");
+    g_DeleteFileA        = (PFN_DeleteFileA)ResolveExport(k32, "DeleteFileA");
+    g_GetFileAttributesA = (PFN_GetFileAttributesA)ResolveExport(k32, "GetFileAttributesA");
     g_AddVectoredExceptionHandler = (PFN_AddVectoredExceptionHandler)ResolveExport(k32, "AddVectoredExceptionHandler");
     g_AddVectoredContinueHandler  = (PFN_AddVectoredContinueHandler)ResolveExport(k32, "AddVectoredContinueHandler");
 
@@ -610,15 +729,18 @@ static void LoadConfigOnce() {
     // 如果 GetPrivateProfileIntA 不可用，保持上面结构体里的安全默认值。
     if (!g_GetPrivateProfileIntA || !g_iniPath[0]) return;
 
-    g_cfg.enableSteamFix = g_GetPrivateProfileIntA("Compatibility","EnableSteamFix",1,g_iniPath)?1:0;
-    g_cfg.enableVideoOverlayFix = g_GetPrivateProfileIntA("Compatibility","EnableVideoOverlayFix",1,g_iniPath)?1:0;
+    // 三个核心修复（SteamFix / VideoOverlayFix / PixelBoundaryFix）从 test13 起不再读取 INI。
+    // 这里只读取真正有用户选择意义的选项。
+    g_cfg.enableSteamInstallScriptFix = g_GetPrivateProfileIntA("Compatibility","EnableSteamInstallScriptFix",1,g_iniPath)?1:0;
     g_cfg.enableHighDpiFix = g_GetPrivateProfileIntA("Compatibility","EnableHighDpiFix",1,g_iniPath)?1:0;
     g_cfg.backendMode = ClampInt((int)g_GetPrivateProfileIntA("Graphics","Backend",0,g_iniPath),0,2);
+    g_cfg.enableReShade = g_GetPrivateProfileIntA("Graphics","EnableReShade",0,g_iniPath)?1:0;
 
-    g_cfg.enableLog = g_GetPrivateProfileIntA("Diagnostics","EnableLog",1,g_iniPath)?1:0;
-    g_cfg.logLevel = ClampInt((int)g_GetPrivateProfileIntA("Diagnostics","LogLevel",2,g_iniPath),0,3);
-    g_cfg.enableCrashDiagnostics = g_GetPrivateProfileIntA("Diagnostics","EnableCrashDiagnostics",0,g_iniPath)?1:0;
-    g_cfg.overlayGuardIntervalMs = ClampInt((int)g_GetPrivateProfileIntA("Diagnostics","OverlayGuardIntervalMs",500,g_iniPath),250,60000);
+    // 发布版默认不生成日志。用户如果遇到问题，只改 EnableLog=1 即可：
+    // LogLevel 默认已经是 3，CrashDiagnostics 默认已经是 1，会自动得到最完整诊断。
+    g_cfg.enableLog = g_GetPrivateProfileIntA("Diagnostics","EnableLog",0,g_iniPath)?1:0;
+    g_cfg.logLevel = ClampInt((int)g_GetPrivateProfileIntA("Diagnostics","LogLevel",3,g_iniPath),0,3);
+    g_cfg.enableCrashDiagnostics = g_GetPrivateProfileIntA("Diagnostics","EnableCrashDiagnostics",1,g_iniPath)?1:0;
 }
 
 // 高 DPI 初始化位于正式日志辅助函数定义之前。
@@ -629,6 +751,16 @@ static void LogDetail(const char* s, bool flushNow);
 static void LogError(const char* s, bool flushNow);
 static void AppendText(char* b, UINT& p, UINT cap, const char* s);
 static void AppendDec(char* b, UINT& p, UINT cap, DWORD v);
+
+// test10 InstallScript 修复函数声明。真正实现放在日志辅助函数之后，
+// 因为它需要写详细日志，同时又会在统一兼容层初始化阶段较早调用。
+static void RepairSteamInstallScriptAndLayersOnce();
+
+// test11 像素边界修复初始化函数声明。
+// 真正实现放在通用 PE/特征码辅助函数之后，因为它需要扫描已经解包到内存中的
+// BaldrSky.exe 主代码。Direct3DCreate9 第一次进入时，游戏的主 .text 已经是可执行明文，
+// 所以这里不需要也不应该依赖磁盘上的加密/封装代码。
+static void InitializePixelBoundaryFixBySignatureOnce();
 
 // ----------------------------------------------------------------------------
 // 高 DPI 缩放兼容：默认 System DPI Aware
@@ -876,6 +1008,109 @@ static void LogRuntimeCodeWindow(DWORD caller) {
 // 如果目标函数指针恰好是 0，那么 CPU 到 EIP=0 时，[ESP] 往往就是谁发起了这次 call。
 static DWORD g_avSequence = 0;
 
+// ============================================================================
+// test12：文字/像素混合左边界前溢修复——内联边界检查 + 安全回退
+// ============================================================================
+//
+// test11 已经通过中文版实机把根因彻底坐实：
+//
+//   EDI        = TargetBase - 4
+//   Fault      = mov ecx,[edi]
+//   PixelSize  = 4 bytes
+//
+// 也就是字体/像素混合循环在左边界外多走了恰好 1 个 32bpp 像素。
+// test11 的做法是“让 AV 先发生，再由 VEH 把 EIP 改到原函数的 add edi,4”。
+// 它非常适合验证根因，但不适合作为长期正常控制流：异常本身有系统开销，也会污染诊断。
+//
+// test12 因此把逻辑前移：
+//
+//   1. 运行时仍然用机器码特征唯一定位原函数；
+//   2. 从同一函数前面的 `mov edx,[esp+XX] / mov edi,[edx+4]` 自动推导
+//      “目标绘图对象”所在的栈偏移 XX；不把中文版 0x38 写死；
+//   3. 把原来的 5 字节
+//          movzx edx,word ptr [ebx]
+//          mov   ecx,dword ptr [edi]
+//      改成 JMP 到我们自己的极小跳板；
+//   4. 跳板先执行原来的 movzx，然后比较：
+//          EDI == [TargetObject+4] - 4
+//      如果成立，直接跳到原函数自己的 `add edi,4`，等价于“裁掉左边界外 1 像素”；
+//      不成立则执行原来的 `mov ecx,[edi]`，然后返回原代码。
+//
+// 正常情况下 test12 起沿用至 test14 的内联路径完全不会产生这个 Access Violation。
+// 只有“特征已经找到，但内联跳板因为内存分配/写保护等原因安装失败”时，
+// 才退回 test11 已实机验证的精确 VEH 恢复，避免因为补丁安装失败让用户重新崩溃。
+static DWORD g_pixelFaultEip = 0;          // `mov ecx,[edi]` 的运行时地址
+static DWORD g_pixelSkipEip = 0;           // 原函数自身 `add edi,4` 的运行时地址
+static DWORD g_pixelSignatureStart = 0;    // 5 字节内联 JMP 的安装位置
+static DWORD g_pixelReturnEip = 0;          // 被覆盖 5 字节后的正常返回地址
+static BYTE  g_pixelTargetObjectStackOffset = 0; // 从机器码自动推导，例如中文版是 0x38
+static DWORD g_pixelRecoveredCount = 0;    // 只有 FALLBACK 模式会增加
+static volatile DWORD g_pixelInlineSkipCount = 0; // INLINE 模式每跳过一个越界像素增加一次
+static DWORD g_pixelInlineLastLoggedCount = 0;
+static bool  g_pixelSignatureReady = false;
+static bool  g_pixelInlineInstalled = false;
+static BYTE* g_pixelInlineThunk = 0;
+
+// INLINE 跳板只做 `inc [计数器]`，不直接调用 C/C++ 日志函数。
+// 原因很简单：这个代码位于字体像素热路径里，调用复杂函数会额外破坏 XMM/x87/调用者保存寄存器，
+// 还可能与日志线程产生重入。只加一个 DWORD 计数最安全；真正写日志由普通线程/Direct3DCreate9
+// 在稍后时机读取这个计数完成。
+static void LogPixelBoundaryInlineStatsIfChanged() {
+    if (!g_pixelInlineInstalled) return;
+    DWORD now=g_pixelInlineSkipCount;
+    if (!now || now==g_pixelInlineLastLoggedCount) return;
+    g_pixelInlineLastLoggedCount=now;
+
+    char b[320]; UINT p=0;
+    AppendText(b,p,sizeof(b),"[像素边界修复][内联] 已在异常发生前跳过左边界外像素，累计次数=");
+    AppendDec(b,p,sizeof(b),now);
+    b[p]=0; LogDetail(b,true);
+}
+
+// test11 的精确异常恢复保留为“安装失败回退”，而不是正常工作方式。
+// 只要 INLINE 已经成功安装，这个函数就拒绝恢复任何 AV；这样如果内联补丁本身有遗漏，
+// CrashDiagnostics=1 时能够真实暴露问题，而不是被旧恢复路径悄悄掩盖。
+static bool TryRecoverPixelBoundaryAv(EXCEPTION_POINTERS32* ep) {
+    if (g_pixelInlineInstalled) return false;
+    if (!g_pixelSignatureReady || !ep ||
+        !ep->ExceptionRecord || !ep->ContextRecord) {
+        return false;
+    }
+
+    EXCEPTION_RECORD32* er = ep->ExceptionRecord;
+    CONTEXT32_MIN* c = ep->ContextRecord;
+
+    if (c->Eip != g_pixelFaultEip) return false;
+    if (er->NumberParameters < 2 || er->ExceptionInformation[0] != 0 ||
+        er->ExceptionInformation[1] != c->Edi) {
+        return false;
+    }
+
+    // 栈偏移不再写死 0x38，而是由同一函数的前置机器码自动推导。
+    DWORD targetSlot = c->Esp + (DWORD)g_pixelTargetObjectStackOffset;
+    if (!CanReadMemory(targetSlot,4)) return false;
+    DWORD targetObject = *(DWORD*)(unsigned long)targetSlot;
+    if (!targetObject || !CanReadMemory(targetObject + 4,4)) return false;
+
+    DWORD targetBase = *(DWORD*)(unsigned long)(targetObject + 4);
+    if (!targetBase || targetBase < 4 || c->Edi != targetBase - 4) return false;
+
+    ++g_pixelRecoveredCount;
+    if (g_pixelRecoveredCount <= 16 || (g_pixelRecoveredCount % 100) == 0) {
+        char b[680]; UINT p=0;
+        AppendText(b,p,sizeof(b),"[像素边界修复][回退恢复] 次数="); AppendDec(b,p,sizeof(b),g_pixelRecoveredCount);
+        AppendText(b,p,sizeof(b)," EIP="); AppendHex32(b,p,sizeof(b),c->Eip);
+        AppendText(b,p,sizeof(b)," EDI="); AppendHex32(b,p,sizeof(b),c->Edi);
+        AppendText(b,p,sizeof(b)," TargetObject="); AppendHex32(b,p,sizeof(b),targetObject);
+        AppendText(b,p,sizeof(b)," TargetBase="); AppendHex32(b,p,sizeof(b),targetBase);
+        AppendText(b,p,sizeof(b)," Delta=-4 SkipEIP="); AppendHex32(b,p,sizeof(b),g_pixelSkipEip);
+        b[p]=0; LogText(b,true);
+    }
+
+    c->Eip = g_pixelSkipEip;
+    return true;
+}
+
 static void LogFaultStack(DWORD avSeq, DWORD tid, CONTEXT32_MIN* c) {
     if (!c) return;
     DWORD esp = c->Esp;
@@ -924,6 +1159,17 @@ static LONG __stdcall ProbeVectoredExceptionHandler(EXCEPTION_POINTERS32* ep) {
     if (!ep || !ep->ExceptionRecord) return EXCEPTION_CONTINUE_SEARCH_VALUE;
     EXCEPTION_RECORD32* er = ep->ExceptionRecord;
     if (er->ExceptionCode != EXCEPTION_ACCESS_VIOLATION_CODE)
+        return EXCEPTION_CONTINUE_SEARCH_VALUE;
+
+    // test12 起的正常路径使用内联检查，test14 继续沿用，不应再走异常恢复。
+    // 这里只保留“INLINE 安装失败时”的 test11 精确回退；若回退成功，
+    // CONTEXT 已经指向原函数自己的“推进到下一像素”路径。
+    if (TryRecoverPixelBoundaryAv(ep))
+        return EXCEPTION_CONTINUE_EXECUTION_VALUE;
+
+    // PixelBoundaryFix 可以单独启用。若用户关闭 CrashDiagnostics，
+    // 除了上面那一种严格匹配的可恢复边界 AV，其他异常不刷详细日志。
+    if (!g_cfg.enableCrashDiagnostics)
         return EXCEPTION_CONTINUE_SEARCH_VALUE;
 
     DWORD avSeq = ++g_avSequence;
@@ -1115,6 +1361,284 @@ static DWORD FindByteSequence(BYTE* begin, DWORD size,
         ++count;
     }
     return count;
+}
+
+
+// ============================================================================
+// test12：定位像素混合边界故障，并自动推导目标对象栈偏移
+// ============================================================================
+//
+// 故障点核心特征仍然来自已经实机确认的中文版：
+//
+//   0F B7 13                movzx edx,word ptr [ebx]
+//   8B 0F                   mov   ecx,dword ptr [edi]
+//   81 E2 00 FF FF FF       and   edx,0xFFFFFF00
+//   C1 E2 10                shl   edx,16
+//   3B D1                   cmp   edx,ecx
+//   76 xx                   jbe   ...
+//
+// test12 额外验证两个同函数结构：
+//
+// A. 故障点前 0x100 字节内必须唯一出现：
+//      8B 54 24 XX          mov edx,[esp+XX]
+//      8B 7A 04             mov edi,[edx+4]
+//    这直接告诉我们“目标绘图对象”的栈偏移 XX。
+//
+// B. 故障点后 0x100 字节内必须唯一出现：
+//      89 1F                mov [edi],ebx
+//      83 C7 04             add edi,4
+//    后者就是越界像素应该跳到的原函数安全续接点。
+//
+// 三部分结构任何一项不唯一，补丁都拒绝启用。
+static DWORD FindPixelBoundaryBlendSite(BYTE* image, DWORD imageSize,
+                                        BYTE** outSignatureStart,
+                                        BYTE** outFault,
+                                        BYTE** outSkip,
+                                        BYTE* outTargetStackOffset) {
+    if (outSignatureStart) *outSignatureStart=0;
+    if (outFault) *outFault=0;
+    if (outSkip) *outSkip=0;
+    if (outTargetStackOffset) *outTargetStackOffset=0;
+    if (!image || imageSize < 0x220) return 0;
+
+    const BYTE signature[] = {
+        0x0F,0xB7,0x13,
+        0x8B,0x0F,
+        0x81,0xE2,0x00,0xFF,0xFF,0xFF,
+        0xC1,0xE2,0x10,
+        0x3B,0xD1,
+        0x76
+    };
+
+    DWORD count=0;
+    BYTE* firstStart=0;
+    BYTE* firstFault=0;
+    BYTE* firstSkip=0;
+    BYTE firstStackOffset=0;
+
+    for (DWORD i=0; i+sizeof(signature) <= imageSize; ++i) {
+        BYTE* q=image+i;
+        if (!BytesEqualSimple(q,signature,(UINT)sizeof(signature))) continue;
+        BYTE* fault=q+3;
+
+        // 先验证并推导目标对象栈偏移。
+        DWORD backStart=(i>0x100)?(i-0x100):0;
+        DWORD baseLoadCount=0;
+        BYTE stackOffset=0;
+        for (DWORD k=backStart; k+7<=i; ++k) {
+            BYTE* t=image+k;
+            if (t[0]==0x8B && t[1]==0x54 && t[2]==0x24 &&
+                t[4]==0x8B && t[5]==0x7A && t[6]==0x04) {
+                ++baseLoadCount;
+                stackOffset=t[3];
+            }
+        }
+        if (baseLoadCount!=1) continue;
+
+        // 再验证故障点后的原函数安全续接结构。
+        DWORD remain=imageSize-(i+3);
+        DWORD window=(remain<0x100)?remain:0x100;
+        BYTE* writeInc=0;
+        DWORD writeIncCount=0;
+        for (DWORD k=0; k+5<=window; ++k) {
+            BYTE* t=fault+k;
+            if (t[0]==0x89 && t[1]==0x1F &&
+                t[2]==0x83 && t[3]==0xC7 && t[4]==0x04) {
+                if (!writeInc) writeInc=t;
+                ++writeIncCount;
+            }
+        }
+        if (writeIncCount!=1 || !writeInc) continue;
+
+        if (!firstStart) {
+            firstStart=q;
+            firstFault=fault;
+            firstSkip=writeInc+2;
+            firstStackOffset=stackOffset;
+        }
+        ++count;
+    }
+
+    if (count==1) {
+        if (outSignatureStart) *outSignatureStart=firstStart;
+        if (outFault) *outFault=firstFault;
+        if (outSkip) *outSkip=firstSkip;
+        if (outTargetStackOffset) *outTargetStackOffset=firstStackOffset;
+    }
+    return count;
+}
+
+// 写一个 x86 rel32 跳转/调用的 32 位位移。
+// x86 近跳转的目标 = “下一条指令地址 + rel32”，所以位移按 32 位地址差计算即可。
+static void WriteRelative32(BYTE* instruction,DWORD target) {
+    DWORD next=Ptr32(instruction+5);
+    DWORD rel=target-next;
+    instruction[1]=(BYTE)(rel & 0xFF);
+    instruction[2]=(BYTE)((rel>>8) & 0xFF);
+    instruction[3]=(BYTE)((rel>>16) & 0xFF);
+    instruction[4]=(BYTE)((rel>>24) & 0xFF);
+}
+
+// 为像素热路径生成一个极小 x86 跳板。
+// 跳板只使用整数通用寄存器，而且会把临时使用的 ECX 恢复；
+// 不调用任何 C++ 函数，不接触 x87/XMM，也不做文件/锁/堆操作。
+static bool InstallPixelBoundaryInlinePatch() {
+    if (!g_pixelSignatureReady || !g_VirtualAlloc || !g_VirtualProtect) return false;
+
+    const BYTE expected[5]={0x0F,0xB7,0x13,0x8B,0x0F};
+    BYTE* site=(BYTE*)(unsigned long)g_pixelSignatureStart;
+    if (!BytesEqualSimple(site,expected,5)) {
+        LogError("[像素边界修复][内联][错误] 补丁点原字节不符合预期；拒绝写入。",true);
+        return false;
+    }
+
+    // 128 字节远大于实际需要，留出足够余量，便于未来扩展诊断而不改变分配逻辑。
+    BYTE* thunk=(BYTE*)g_VirtualAlloc(0,128,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);
+    if (!thunk) {
+        LogError("[像素边界修复][内联][错误] VirtualAlloc 跳板失败；将使用异常恢复回退。",true);
+        return false;
+    }
+
+    UINT p=0;
+    // 重新执行被 5 字节 JMP 覆盖掉的第一条原指令：movzx edx,word ptr [ebx]
+    thunk[p++]=0x0F; thunk[p++]=0xB7; thunk[p++]=0x13;
+
+    // ECX 在原代码下一条本来就会被 mov ecx,[edi] 覆盖。
+    // 但“跳过越界像素”路径在 test11 中保留的是故障前旧 ECX，
+    // 所以这里仍然 push/pop ECX，做到和已实机验证的恢复现场完全一致。
+    thunk[p++]=0x51; // push ecx
+
+    // push ecx 让 ESP 比原函数低 4 字节，所以原来的 [ESP+XX] 现在变成 [ESP+XX+4]。
+    BYTE adjusted=(BYTE)(g_pixelTargetObjectStackOffset+4);
+    thunk[p++]=0x8B; thunk[p++]=0x4C; thunk[p++]=0x24; thunk[p++]=adjusted; // mov ecx,[esp+adjusted]
+    thunk[p++]=0x85; thunk[p++]=0xC9; // test ecx,ecx
+
+    // 目标对象意外为 NULL 时不要新增崩溃：恢复 ECX 后按原代码走，让原程序自己处理。
+    UINT jzToNormal=p; thunk[p++]=0x74; thunk[p++]=0x00;
+
+    thunk[p++]=0x8B; thunk[p++]=0x49; thunk[p++]=0x04; // mov ecx,[ecx+4] => TargetBase
+    thunk[p++]=0x83; thunk[p++]=0xE9; thunk[p++]=0x04; // sub ecx,4
+    thunk[p++]=0x3B; thunk[p++]=0xF9;                 // cmp edi,ecx
+    UINT jeToSkip=p; thunk[p++]=0x74; thunk[p++]=0x00;
+
+    UINT normalLabel=p;
+    thunk[p++]=0x59;                   // pop ecx
+    thunk[p++]=0x8B; thunk[p++]=0x0F; // 原指令：mov ecx,[edi]
+    UINT jmpReturn=p; thunk[p++]=0xE9; p+=4;
+
+    UINT skipLabel=p;
+    thunk[p++]=0x59; // pop ecx，恢复到 test11 故障发生前的 ECX
+
+    // 只增加一个 DWORD 计数，便于普通线程稍后写日志。
+    // FF 05 imm32 = inc dword ptr [absolute-address]
+    thunk[p++]=0xFF; thunk[p++]=0x05;
+    DWORD counterAddress=Ptr32((void*)&g_pixelInlineSkipCount);
+    thunk[p++]=(BYTE)(counterAddress&0xFF);
+    thunk[p++]=(BYTE)((counterAddress>>8)&0xFF);
+    thunk[p++]=(BYTE)((counterAddress>>16)&0xFF);
+    thunk[p++]=(BYTE)((counterAddress>>24)&0xFF);
+
+    UINT jmpSkip=p; thunk[p++]=0xE9; p+=4;
+
+    // 回填两个 rel8 条件跳转。
+    int relNormal=(int)normalLabel-(int)(jzToNormal+2);
+    int relSkip=(int)skipLabel-(int)(jeToSkip+2);
+    if (relNormal < -128 || relNormal > 127 || relSkip < -128 || relSkip > 127) {
+        LogError("[像素边界修复][内联][错误] 内部短跳转超出范围；将使用异常恢复回退。",true);
+        return false;
+    }
+    thunk[jzToNormal+1]=(BYTE)(signed char)relNormal;
+    thunk[jeToSkip+1]=(BYTE)(signed char)relSkip;
+
+    WriteRelative32(thunk+jmpReturn,g_pixelReturnEip);
+    WriteRelative32(thunk+jmpSkip,g_pixelSkipEip);
+
+    // 写完以后把跳板页面从 RW 改为 RX，避免长期留下可写可执行页。
+    DWORD oldThunkProtect=0;
+    if (!g_VirtualProtect(thunk,128,PAGE_EXECUTE_READ,&oldThunkProtect)) {
+        LogError("[像素边界修复][内联][错误] 跳板无法切换为可执行只读；将使用异常恢复回退。",true);
+        return false;
+    }
+    if (g_FlushInstructionCache)
+        g_FlushInstructionCache((HANDLE)(long)-1,thunk,p);
+
+    BYTE patch[5]={0xE9,0,0,0,0};
+    // 注意：patch[] 只是临时缓冲区，rel32 必须按“真正执行 JMP 的游戏地址 site”计算，
+    // 不能拿 patch[] 自己在栈上的地址计算。
+    DWORD siteRel=Ptr32(thunk)-Ptr32(site+5);
+    patch[1]=(BYTE)(siteRel&0xFF);
+    patch[2]=(BYTE)((siteRel>>8)&0xFF);
+    patch[3]=(BYTE)((siteRel>>16)&0xFF);
+    patch[4]=(BYTE)((siteRel>>24)&0xFF);
+
+    DWORD oldSiteProtect=0;
+    if (!g_VirtualProtect(site,5,PAGE_READWRITE,&oldSiteProtect)) {
+        LogError("[像素边界修复][内联][错误] 原函数补丁点无法取得写权限；将使用异常恢复回退。",true);
+        return false;
+    }
+    for (UINT i=0;i<5;++i) site[i]=patch[i];
+    DWORD ignored=0;
+    g_VirtualProtect(site,5,oldSiteProtect,&ignored);
+    if (g_FlushInstructionCache)
+        g_FlushInstructionCache((HANDLE)(long)-1,site,5);
+
+    g_pixelInlineThunk=thunk;
+    g_pixelInlineInstalled=true;
+
+    char b[620]; UINT q=0;
+    AppendText(b,q,sizeof(b),"[像素边界修复][内联][成功] 已在异常发生前安装边界检查。Patch=");
+    AppendHex32(b,q,sizeof(b),g_pixelSignatureStart);
+    AppendText(b,q,sizeof(b)," Thunk="); AppendHex32(b,q,sizeof(b),Ptr32(thunk));
+    AppendText(b,q,sizeof(b)," Return="); AppendHex32(b,q,sizeof(b),g_pixelReturnEip);
+    AppendText(b,q,sizeof(b)," Skip="); AppendHex32(b,q,sizeof(b),g_pixelSkipEip);
+    AppendText(b,q,sizeof(b)," TargetStackOffset="); AppendHex32(b,q,sizeof(b),(DWORD)g_pixelTargetObjectStackOffset);
+    b[q]=0; LogText(b,true);
+    return true;
+}
+
+static void InitializePixelBoundaryFixBySignatureOnce() {
+    static bool attempted=false;
+    if (attempted) return;
+    attempted=true;
+
+    BYTE* image=(BYTE*)FindLoadedModule("BaldrSky.exe");
+    DWORD imageSize=GetImageSize32(image);
+    if (!image || !imageSize) {
+        LogText("[像素边界修复][错误] 无法取得 BaldrSky.exe 运行时映像。",true);
+        return;
+    }
+
+    BYTE* sig=0;
+    BYTE* fault=0;
+    BYTE* skip=0;
+    BYTE stackOffset=0;
+    DWORD count=FindPixelBoundaryBlendSite(image,imageSize,&sig,&fault,&skip,&stackOffset);
+
+    char b[620]; UINT p=0;
+    AppendText(b,p,sizeof(b),"[像素边界修复][详细] 完整结构命中数="); AppendDec(b,p,sizeof(b),count);
+    if (sig) {
+        AppendText(b,p,sizeof(b)," signature="); AppendHex32(b,p,sizeof(b),Ptr32(sig));
+        AppendText(b,p,sizeof(b)," fault="); AppendHex32(b,p,sizeof(b),Ptr32(fault));
+        AppendText(b,p,sizeof(b)," skip="); AppendHex32(b,p,sizeof(b),Ptr32(skip));
+        AppendText(b,p,sizeof(b)," targetStackOffset="); AppendHex32(b,p,sizeof(b),(DWORD)stackOffset);
+    }
+    b[p]=0; LogText(b,true);
+
+    if (count!=1 || !sig || !fault || !skip || !stackOffset) {
+        LogText("[像素边界修复][警告] 特征/目标对象栈来源/安全续接不是唯一结构；为安全起见不修改代码。",true);
+        return;
+    }
+
+    g_pixelSignatureStart=Ptr32(sig);
+    g_pixelFaultEip=Ptr32(fault);
+    g_pixelReturnEip=Ptr32(sig+5);
+    g_pixelSkipEip=Ptr32(skip);
+    g_pixelTargetObjectStackOffset=stackOffset;
+    g_pixelSignatureReady=true;
+
+    if (!InstallPixelBoundaryInlinePatch()) {
+        LogText("[像素边界修复][回退] 内联补丁安装失败；启用 test11 已实机验证的精确异常恢复。",true);
+    }
 }
 
 struct SteamSignatureLayout {
@@ -1690,12 +2214,397 @@ static bool InitRegistryApis() {
     g_RegSetValueExA=(PFN_RegSetValueExA)g_GetProcAddress(adv,"RegSetValueExA");
     g_RegQueryValueExA=(PFN_RegQueryValueExA)g_GetProcAddress(adv,"RegQueryValueExA");
     g_RegCloseKey=(PFN_RegCloseKey)g_GetProcAddress(adv,"RegCloseKey");
+    g_RegDeleteValueA=(PFN_RegDeleteValueA)g_GetProcAddress(adv,"RegDeleteValueA");
     return g_RegCreateKeyExA && g_RegSetValueExA && g_RegQueryValueExA && g_RegCloseKey;
+}
+
+// ============================================================================
+// Steam InstallScript Fix：静默移除 DPIUNAWARE / VISTARTM 的持久化来源
+// ============================================================================
+//
+// Steam 发行包里的 install.vdf 会在 Steam 真正 CreateProcess(BaldrSky.exe) 之前执行。
+// 已确认其中存在：
+//
+//   HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers
+//       %INSTALLDIR%\BaldrSky.exe = "~ DPIUNAWARE VISTARTM"
+//
+// 这意味着我们的 d3d9.dll 第一次得到控制权时，当前进程已经可能被 Windows 按
+// DPI Unaware + Vista compatibility layer 创建。用户已经实机验证：手动删除该块后，
+// Steam 后续不会再强制设置，窗口也恢复为原始 800x600。
+//
+// test10 的目标不是“在已经创建好的第一进程里和 AppCompat 打架”，而是静默消除根源：
+//   1. 读取同目录 install.vdf；
+//   2. 只定位包含 AppCompatFlags + Layers + BaldrSky.exe + DPIUNAWARE + VISTARTM 的子块；
+//   3. 仅第一次把原文件备份为 install.vdf.baldrskywin11fix.bak；
+//   4. 写临时文件，再用 MoveFileExA 原子式替换原文件；
+//   5. 同时清理当前 HKCU Layers 值里的 DPIUNAWARE/VISTARTM token；
+//   6. 正常情况下不弹窗、不退出、不自动重启。第一轮是否已经受 Shim 影响由 Windows 决定；
+//      第二轮开始 Steam 已失去这段持久化写入来源。
+//   7. 唯一例外是 install.vdf 整个文件缺失：此时按游戏版本弹一次中/英文 MessageBox，
+//      提醒用户通过 Steam 验证游戏文件完整性；用户确认后游戏仍继续启动。
+//
+// 安全边界：
+// - 不删除整个 install.vdf；
+// - 不删除整个 installscript；
+// - 不删除整个 Registry；
+// - 只删除唯一命中的 AppCompatFlags\Layers 子项；
+// - 如果候选不是唯一一处，宁可不改；
+// - 注册表里只剔除 DPIUNAWARE / VISTARTM，其他用户自定义 token 原样保留。
+
+static bool g_installScriptFixAttempted=false;
+
+// install.vdf 正常只有几 KB。这里给 64 KiB 的静态工作区，既足够宽裕，
+// 又避免在老 x86 游戏主线程栈上一次性放两个大数组。若未来 Steam 把文件扩到更大，
+// 安全策略是记录并跳过，而不是截断文件。
+static char g_installVdfInput[65536];
+static char g_installVdfOutput[65536];
+
+// 在 [begin,end) 范围里查找一个普通 ASCII 子串。
+// 返回 -1 表示没找到；不使用 strstr 是为了继续保持无 CRT。
+static int FindAsciiSubstringRange(const char* data,DWORD begin,DWORD end,const char* needle) {
+    if (!data || !needle || begin>=end) return -1;
+    UINT n=AsciiLen(needle);
+    if (!n || (DWORD)n>end-begin) return -1;
+    for (DWORD i=begin;i+(DWORD)n<=end;++i) {
+        bool same=true;
+        for (UINT j=0;j<n;++j) {
+            if (data[i+j]!=needle[j]) { same=false; break; }
+        }
+        if (same) return (int)i;
+    }
+    return -1;
+}
+
+// 从某个位置向左找到当前文本行的第一个字符。
+// 这样删除 VDF 子块时连同原有缩进一起删掉，不留下半行空白。
+static DWORD FindLineStart(const char* data,DWORD pos) {
+    while (pos>0 && data[pos-1]!='\n' && data[pos-1]!='\r') --pos;
+    return pos;
+}
+
+// 从某个位置向右越过当前行结束符。
+// 同时兼容 CRLF 与单独 LF。
+static DWORD FindAfterLineEnd(const char* data,DWORD size,DWORD pos) {
+    while (pos<size && data[pos]!='\r' && data[pos]!='\n') ++pos;
+    if (pos<size && data[pos]=='\r') ++pos;
+    if (pos<size && data[pos]=='\n') ++pos;
+    return pos;
+}
+
+// VDF 是 KeyValues 文本，花括号只在“非引号字符串”里表示层级。
+// 这里从 openBrace 指向的 '{' 开始配对，忽略引号内部的 { }，并理解 \" 这种转义。
+static int FindMatchingVdfBrace(const char* data,DWORD size,DWORD openBrace) {
+    if (!data || openBrace>=size || data[openBrace]!='{') return -1;
+    int depth=0;
+    bool inQuote=false;
+    bool escaped=false;
+    for (DWORD i=openBrace;i<size;++i) {
+        char c=data[i];
+        if (inQuote) {
+            if (escaped) { escaped=false; continue; }
+            if (c=='\\') { escaped=true; continue; }
+            if (c=='\"') inQuote=false;
+            continue;
+        }
+        if (c=='\"') { inQuote=true; continue; }
+        if (c=='{') ++depth;
+        else if (c=='}') {
+            --depth;
+            if (depth==0) return (int)i;
+            if (depth<0) return -1;
+        }
+    }
+    return -1;
+}
+
+// 小文件读取。只有完整读取成功才返回 true。
+static bool ReadWholeSmallFileA(const char* path,char* buffer,DWORD capacity,DWORD* outSize) {
+    if (outSize) *outSize=0;
+    if (!path || !buffer || capacity<2 || !g_CreateFileA || !g_ReadFile || !g_GetFileSize || !g_CloseHandle) return false;
+    HANDLE h=g_CreateFileA(path,GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE,0,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0);
+    if (h==INVALID_HANDLE_VALUE) return false;
+    DWORD size=g_GetFileSize(h,0);
+    if (size==0xFFFFFFFFUL || size+1>=capacity) { g_CloseHandle(h); return false; }
+    DWORD got=0;
+    BOOL ok=g_ReadFile(h,buffer,size,&got,0);
+    g_CloseHandle(h);
+    if (!ok || got!=size) return false;
+    buffer[size]=0;
+    if (outSize) *outSize=size;
+    return true;
+}
+
+// 小文件写入。先写临时文件，调用方再 MoveFileExA 覆盖正式 install.vdf。
+static bool WriteWholeSmallFileA(const char* path,const char* data,DWORD size) {
+    if (!path || !data || !g_CreateFileA || !g_WriteFile || !g_CloseHandle) return false;
+    HANDLE h=g_CreateFileA(path,GENERIC_WRITE,FILE_SHARE_READ,0,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,0);
+    if (h==INVALID_HANDLE_VALUE) return false;
+    DWORD wrote=0;
+    BOOL ok=g_WriteFile(h,data,size,&wrote,0);
+    if (ok && g_FlushFileBuffers) g_FlushFileBuffers(h);
+    g_CloseHandle(h);
+    return ok && wrote==size;
+}
+
+// 大小写无关比较一个“由指针+长度表示的 token”与固定单词。
+static bool TokenEqualsNoCase(const char* token,UINT tokenLen,const char* word) {
+    if (!token || !word || tokenLen!=AsciiLen(word)) return false;
+    for (UINT i=0;i<tokenLen;++i) {
+        if (LowerAsciiSimple(token[i])!=LowerAsciiSimple(word[i])) return false;
+    }
+    return true;
+}
+
+// 判断当前 BaldrSky.exe 是英文 Steam 版还是中文 Steam 版。
+//
+// 为什么不用 Windows UI 语言：
+// 用户可能在中文 Windows 上运行英文版，也可能在英文 Windows 上运行中文版。
+// “提示语言随游戏”应该看游戏自身，而不是操作系统语言。
+//
+// 英文 Steam EXE 的 .patch 区已确认额外包含 BaldrSkyCustom.ttf，中文版没有。
+// 这里再同时接受 BALDRSKY_EN 作为第二个英文语义锚点，避免未来某个英文构建只改了其中一处。
+// 两者都找不到时安全回退中文，因为当前项目已验证的另一目标就是中文 Steam 版。
+static bool IsEnglishBaldrSkyRuntimeImage() {
+    BYTE* image=(BYTE*)FindLoadedModule("BaldrSky.exe");
+    DWORD imageSize=GetImageSize32(image);
+    if (!image || !imageSize) return false;
+    const char* data=(const char*)image;
+    if (FindAsciiSubstringRange(data,0,imageSize,"BaldrSkyCustom.ttf")>=0) return true;
+    if (FindAsciiSubstringRange(data,0,imageSize,"BALDRSKY_EN")>=0) return true;
+    return false;
+}
+
+// install.vdf 整个文件缺失时显示一次提示。
+// 这不是修复失败条件，所以 MessageBox 返回后函数立即结束，游戏继续正常初始化。
+static void ShowMissingInstallVdfMessageBoxOnce() {
+    static bool shown=false;
+    if (shown) return;
+    shown=true;
+
+    if (!InitWinApis() || !g_LoadLibraryA || !g_GetProcAddress) {
+        LogError("[InstallScript修复][警告] install.vdf 缺失，但无法解析 MessageBoxW；游戏继续启动。",true);
+        return;
+    }
+
+    HMODULE user32=(HMODULE)FindLoadedModule("user32.dll");
+    if (!user32) user32=g_LoadLibraryA("user32.dll");
+    PFN_MessageBoxW messageBoxW=user32 ? (PFN_MessageBoxW)g_GetProcAddress(user32,"MessageBoxW") : 0;
+    if (!messageBoxW) {
+        LogError("[InstallScript修复][警告] install.vdf 缺失，但 MessageBoxW 不可用；游戏继续启动。",true);
+        return;
+    }
+
+    if (IsEnglishBaldrSkyRuntimeImage()) {
+        messageBoxW(
+            0,
+            L"Steam install.vdf was not found.\n\n"
+            L"Please verify the integrity of the game files in Steam to restore the missing file.\n"
+            L"The game will continue to start.",
+            L"BALDR SKY Win11 Compatibility Fix",
+            MB_OK_VALUE|MB_ICONWARNING_VALUE|MB_SETFOREGROUND_VALUE);
+        LogText("[InstallScript修复][提示] install.vdf 缺失；已显示英文完整性验证提示，游戏继续启动。",true);
+    } else {
+        messageBoxW(
+            0,
+            L"未找到 Steam 的 install.vdf。\n\n"
+            L"建议在 Steam 中验证游戏文件完整性，以恢复缺失文件。\n"
+            L"兼容层将继续启动游戏。",
+            L"BALDR SKY Win11 兼容层",
+            MB_OK_VALUE|MB_ICONWARNING_VALUE|MB_SETFOREGROUND_VALUE);
+        LogText("[InstallScript修复][提示] install.vdf 缺失；已显示中文完整性验证提示，游戏继续启动。",true);
+    }
+}
+
+// 清理 HKCU\...\AppCompatFlags\Layers 中当前 BaldrSky.exe 对应值。
+// 只删除 DPIUNAWARE 和 VISTARTM 两个 token。
+// 例如：
+//   "~ DPIUNAWARE VISTARTM"            -> 整条值删除
+//   "~ DPIUNAWARE VISTARTM RUNASADMIN" -> "~ RUNASADMIN"
+// 这样用户自己额外设置的兼容选项不会被本修复层误删。
+static void CleanCurrentExeAppCompatLayers() {
+    BuildModulePathsOnce();
+    if (!g_mainExePath[0] || !InitRegistryApis() || !g_RegDeleteValueA) {
+        LogDetail("[InstallScript修复][详细] 注册表 API 不完整，跳过当前 Layers token 清理。",true);
+        return;
+    }
+
+    const char* keyPath="Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers";
+    HKEY key=0; DWORD disposition=0;
+    LONG rc=g_RegCreateKeyExA(HKEY_CURRENT_USER_VALUE,keyPath,0,0,0,KEY_QUERY_VALUE_VALUE|KEY_SET_VALUE_VALUE,0,&key,&disposition);
+    if (rc!=ERROR_SUCCESS_VALUE || !key) {
+        LogDetail("[InstallScript修复][详细] 当前用户 AppCompatFlags\\Layers 无法打开，跳过。",true);
+        return;
+    }
+
+    char oldValue[1024]; DWORD type=0; DWORD bytes=(DWORD)sizeof(oldValue);
+    rc=g_RegQueryValueExA(key,g_mainExePath,0,&type,(BYTE*)oldValue,&bytes);
+    if (rc!=ERROR_SUCCESS_VALUE || (type!=REG_SZ_VALUE && type!=REG_EXPAND_SZ_VALUE) || bytes==0) {
+        g_RegCloseKey(key);
+        LogDetail("[InstallScript修复][详细] 当前 BaldrSky.exe 没有需要清理的 AppCompat Layers 字符串。",true);
+        return;
+    }
+    oldValue[sizeof(oldValue)-1]=0;
+
+    char filtered[1024]; UINT out=0; UINT i=0; int removed=0;
+    while (oldValue[i]) {
+        while (oldValue[i]==' ' || oldValue[i]=='\t') ++i;
+        if (!oldValue[i]) break;
+        UINT start=i;
+        while (oldValue[i] && oldValue[i]!=' ' && oldValue[i]!='\t') ++i;
+        UINT len=i-start;
+        if (TokenEqualsNoCase(oldValue+start,len,"DPIUNAWARE") || TokenEqualsNoCase(oldValue+start,len,"VISTARTM")) {
+            ++removed;
+            continue;
+        }
+        if (out && out+1<sizeof(filtered)) filtered[out++]=' ';
+        for (UINT j=0;j<len && out+1<sizeof(filtered);++j) filtered[out++]=oldValue[start+j];
+    }
+    filtered[out]=0;
+
+    if (!removed) {
+        g_RegCloseKey(key);
+        LogDetail("[InstallScript修复][详细] 当前 Layers 值不含 DPIUNAWARE/VISTARTM，无需修改。",true);
+        return;
+    }
+
+    // 如果过滤后只剩 KeyValues/Compat 常见的前缀“~”，它本身没有任何兼容含义，
+    // 直接删除整条值最干净；否则把保留下来的其他 token 写回。
+    bool onlyTilde=(filtered[0]=='~' && filtered[1]==0);
+    if (filtered[0]==0 || onlyTilde) {
+        rc=g_RegDeleteValueA(key,g_mainExePath);
+        if (rc==ERROR_SUCCESS_VALUE)
+            LogText("[InstallScript修复][成功] 已静默删除当前 BaldrSky.exe 的 DPIUNAWARE/VISTARTM AppCompat 值。",true);
+        else
+            LogError("[InstallScript修复][警告] 已识别 AppCompat 值，但删除失败；游戏继续启动。",true);
+    } else {
+        rc=g_RegSetValueExA(key,g_mainExePath,0,REG_SZ_VALUE,(const BYTE*)filtered,AsciiLen(filtered)+1);
+        if (rc==ERROR_SUCCESS_VALUE) {
+            char b[1200]; UINT p=0;
+            AppendText(b,p,sizeof(b),"[InstallScript修复][成功] 已剔除 DPIUNAWARE/VISTARTM，保留其他 AppCompat token：");
+            AppendText(b,p,sizeof(b),filtered); b[p]=0; LogText(b,true);
+        } else {
+            LogError("[InstallScript修复][警告] AppCompat token 过滤结果写回失败；游戏继续启动。",true);
+        }
+    }
+    g_RegCloseKey(key);
+}
+
+static void RepairSteamInstallScriptAndLayersOnce() {
+    if (g_installScriptFixAttempted) return;
+    g_installScriptFixAttempted=true;
+
+    BuildModulePathsOnce();
+    if (!InitWinApis()) {
+        LogError("[InstallScript修复][警告] Windows 文件 API 不完整，无法检查 install.vdf。",true);
+        return;
+    }
+
+    // 无论 install.vdf 是否已经被修过，都先清理 HKCU 中 Steam 上一次可能留下的值。
+    CleanCurrentExeAppCompatLayers();
+
+    char vdfPath[520], backupPath[560], tempPath[560];
+    if (!BuildSiblingFilePath("install.vdf",vdfPath,(UINT)sizeof(vdfPath))) {
+        LogDetail("[InstallScript修复][详细] 无法构造 install.vdf 路径，跳过文件净化。",true);
+        return;
+    }
+    if (!BuildSiblingFilePath("install.vdf.baldrskywin11fix.bak",backupPath,(UINT)sizeof(backupPath)) ||
+        !BuildSiblingFilePath("install.vdf.baldrskywin11fix.tmp",tempPath,(UINT)sizeof(tempPath))) {
+        LogDetail("[InstallScript修复][详细] 无法构造备份/临时文件路径，跳过文件净化。",true);
+        return;
+    }
+
+    // 先明确区分“文件根本不存在”和“文件存在但读取失败”。
+    // 只有前者才按用户要求弹 MessageBox；后者只写日志，避免把权限/异常文件误报成缺失。
+    if (g_GetFileAttributesA) {
+        DWORD attrs=g_GetFileAttributesA(vdfPath);
+        if (attrs==INVALID_FILE_ATTRIBUTES_VALUE) {
+            DWORD err=g_GetLastError ? g_GetLastError() : 0;
+            if (err==ERROR_FILE_NOT_FOUND_VALUE || err==ERROR_PATH_NOT_FOUND_VALUE) {
+                LogError("[InstallScript修复][警告] 同目录缺少 install.vdf；建议通过 Steam 验证游戏文件完整性。游戏仍继续启动。",true);
+                ShowMissingInstallVdfMessageBoxOnce();
+                return;
+            }
+        }
+    }
+
+    DWORD size=0;
+    if (!ReadWholeSmallFileA(vdfPath,g_installVdfInput,(DWORD)sizeof(g_installVdfInput),&size)) {
+        LogError("[InstallScript修复][警告] install.vdf 存在但无法完整读取，或文件超过 64 KiB；为安全起见不修改，游戏继续启动。",true);
+        return;
+    }
+
+    // 不直接假定格式化空格/Tab，也不要求完整路径字符串的反斜杠写法固定。
+    // 先找 AppCompatFlags，再用同一花括号子块中的其他语义词确认它就是目标项。
+    DWORD search=0; int candidateCount=0; DWORD removeStart=0,removeEnd=0;
+    while (search<size) {
+        int hit=FindAsciiSubstringRange(g_installVdfInput,search,size,"AppCompatFlags");
+        if (hit<0) break;
+        DWORD h=(DWORD)hit;
+        DWORD lineStart=FindLineStart(g_installVdfInput,h);
+        int brace=FindAsciiSubstringRange(g_installVdfInput,h,(h+1024<size)?h+1024:size,"{");
+        if (brace>=0) {
+            int close=FindMatchingVdfBrace(g_installVdfInput,size,(DWORD)brace);
+            if (close>=0) {
+                DWORD b=(DWORD)brace, e=(DWORD)close+1;
+                bool hasLayers=FindAsciiSubstringRange(g_installVdfInput,lineStart,e,"Layers")>=0;
+                bool hasExe=FindAsciiSubstringRange(g_installVdfInput,b,e,"BaldrSky.exe")>=0;
+                bool hasDpi=FindAsciiSubstringRange(g_installVdfInput,b,e,"DPIUNAWARE")>=0;
+                bool hasVista=FindAsciiSubstringRange(g_installVdfInput,b,e,"VISTARTM")>=0;
+                if (hasLayers && hasExe && hasDpi && hasVista) {
+                    ++candidateCount;
+                    removeStart=lineStart;
+                    removeEnd=FindAfterLineEnd(g_installVdfInput,size,e);
+                }
+            }
+        }
+        search=h+1;
+    }
+
+    if (candidateCount==0) {
+        LogDetail("[InstallScript修复][详细] install.vdf 中已不存在 DPIUNAWARE/VISTARTM AppCompat 子块，无需修改。",true);
+        return;
+    }
+    if (candidateCount!=1 || removeEnd<=removeStart || removeEnd>size) {
+        char b[240]; UINT p=0;
+        AppendText(b,p,sizeof(b),"[InstallScript修复][警告] install.vdf 目标子块候选数=");
+        AppendDec(b,p,sizeof(b),(DWORD)candidateCount);
+        AppendText(b,p,sizeof(b),"；不是唯一命中，为安全起见不修改文件。"); b[p]=0; LogError(b,true);
+        return;
+    }
+
+    DWORD prefix=removeStart;
+    DWORD suffix=size-removeEnd;
+    DWORD outSize=prefix+suffix;
+    if (outSize+1>=sizeof(g_installVdfOutput)) {
+        LogError("[InstallScript修复][警告] 修改后的 install.vdf 超出安全缓冲区；不修改。",true);
+        return;
+    }
+    for (DWORD i=0;i<prefix;++i) g_installVdfOutput[i]=g_installVdfInput[i];
+    for (DWORD i=0;i<suffix;++i) g_installVdfOutput[prefix+i]=g_installVdfInput[removeEnd+i];
+    g_installVdfOutput[outSize]=0;
+
+    // 备份使用 CopyFileA(..., TRUE)：TRUE 表示“备份已存在就绝不覆盖”。
+    // 因此永远保留第一次自动修改前的 Steam 原文件，方便人工审计或恢复。
+    if (g_CopyFileA) g_CopyFileA(vdfPath,backupPath,1);
+
+    // 先完整写临时文件，再替换正式文件，避免在 CREATE_ALWAYS 后进程异常导致 install.vdf 半截。
+    if (!WriteWholeSmallFileA(tempPath,g_installVdfOutput,outSize)) {
+        if (g_DeleteFileA) g_DeleteFileA(tempPath);
+        LogError("[InstallScript修复][警告] install.vdf 临时文件写入失败；原文件保持不变。",true);
+        return;
+    }
+    if (!g_MoveFileExA || !g_MoveFileExA(tempPath,vdfPath,MOVEFILE_REPLACE_EXISTING_VALUE|MOVEFILE_WRITE_THROUGH_VALUE)) {
+        if (g_DeleteFileA) g_DeleteFileA(tempPath);
+        LogError("[InstallScript修复][警告] install.vdf 原子替换失败；原文件保持不变。",true);
+        return;
+    }
+
+    LogText("[InstallScript修复][成功] 已静默移除 install.vdf 中强制 DPIUNAWARE/VISTARTM 的 AppCompatFlags\\Layers 子块。",true);
+    LogDetail("[InstallScript修复][详细] 原始 install.vdf 仅首次备份为 install.vdf.baldrskywin11fix.bak；正常修复过程不弹窗、不自动重启。",true);
 }
 
 static bool ApplyVideoOverlayValue(bool fromGuard) {
     LoadConfigOnce();
-    if (!g_cfg.enableVideoOverlayFix) return true;
     BuildModulePathsOnce();
     if (!g_mainExePath[0]) return false;
     if (!InitRegistryApis()) {
@@ -1754,15 +2663,17 @@ static DWORD __stdcall OverlayGuardThread(void*) {
     // 线程无需高频运行。默认每 500 毫秒检查一次，足够及时发现“播放视频后被写回 1”的情况，
     // 同时几乎没有 CPU/磁盘/注册表负担。
     for (;;) {
-        if (g_Sleep) g_Sleep((DWORD)g_cfg.overlayGuardIntervalMs);
+        if (g_Sleep) g_Sleep(OVERLAY_GUARD_INTERVAL_MS);
         else return 0;
-        if (!g_cfg.enableVideoOverlayFix) return 0;
         ApplyVideoOverlayValue(true);
+        // Overlay 守护线程本来就每隔一段时间醒一次。顺手读取一个 DWORD 计数即可，
+        // 不额外创建线程，也不会让像素热路径直接执行日志 I/O。
+        LogPixelBoundaryInlineStatsIfChanged();
     }
 }
 
 static void StartOverlayGuardOnce() {
-    if (g_overlayGuardStarted || !g_cfg.enableVideoOverlayFix) return;
+    if (g_overlayGuardStarted) return;
     g_overlayGuardStarted=true;
 
     ApplyVideoOverlayValue(false);
@@ -1778,7 +2689,7 @@ static void StartOverlayGuardOnce() {
         AppendText(b,p,sizeof(b),"[视频修复] Overlay 守护线程已启动，TID=");
         AppendDec(b,p,sizeof(b),tid);
         AppendText(b,p,sizeof(b),"，检查间隔(ms)=");
-        AppendDec(b,p,sizeof(b),(DWORD)g_cfg.overlayGuardIntervalMs);
+        AppendDec(b,p,sizeof(b),OVERLAY_GUARD_INTERVAL_MS);
         b[p]=0; LogDetail(b,true);
         if (g_CloseHandle) g_CloseHandle(th);
     } else {
@@ -1797,7 +2708,7 @@ static void LogStartupSummaryOnce() {
     g_startupLogged=true;
 
     LogText("============================================================",true);
-    LogText("BALDR SKY Steam Win11 兼容层 v0.1-t9",true);
+    LogText("BALDR SKY Steam Win11 兼容层 v0.1-t14",true);
     LogText("============================================================",true);
     LogText("[说明] By Luminous 20260927编译&发布",true);
     LogText("[说明] 如果你是整合包里看到的，很遗憾我没发过，出了问题找做整合包的",true);
@@ -1816,10 +2727,12 @@ static void LogStartupSummaryOnce() {
     AppendText(b,p,sizeof(b),"；日志="); AppendText(b,p,sizeof(b),g_logPath);
     b[p]=0; LogText(b,true);
 
-    p=0; AppendText(b,p,sizeof(b),"[配置] SteamFix="); AppendDec(b,p,sizeof(b),g_cfg.enableSteamFix);
-    AppendText(b,p,sizeof(b)," VideoOverlayFix="); AppendDec(b,p,sizeof(b),g_cfg.enableVideoOverlayFix);
+    p=0; AppendText(b,p,sizeof(b),"[配置] 核心修复=SteamFix+VideoOverlayFix+PixelBoundaryFix(永久开启)");
+    AppendText(b,p,sizeof(b)," SteamInstallScriptFix="); AppendDec(b,p,sizeof(b),g_cfg.enableSteamInstallScriptFix);
     AppendText(b,p,sizeof(b)," HighDpiFix="); AppendDec(b,p,sizeof(b),g_cfg.enableHighDpiFix);
     AppendText(b,p,sizeof(b)," Backend="); AppendDec(b,p,sizeof(b),g_cfg.backendMode);
+    AppendText(b,p,sizeof(b)," ReShade="); AppendDec(b,p,sizeof(b),g_cfg.enableReShade);
+    AppendText(b,p,sizeof(b)," EnableLog="); AppendDec(b,p,sizeof(b),g_cfg.enableLog);
     AppendText(b,p,sizeof(b)," CrashDiagnostics="); AppendDec(b,p,sizeof(b),g_cfg.enableCrashDiagnostics);
     AppendText(b,p,sizeof(b)," LogLevel="); AppendDec(b,p,sizeof(b),g_cfg.logLevel);
     b[p]=0; LogText(b,true);
@@ -1841,25 +2754,47 @@ static void InitializeCompatibilityCoreOnce() {
     // 安全边界：同目录的 StartUpTool.exe 等辅助程序如果也加载本 d3d9.dll，
     // 只得到透明 D3D9 转发，不允许执行任何 BALDR SKY 专用的内存/注册表修复。
     if (!IsBaldrSkyMainProcess()) {
-        LogText("[安全] 当前主程序不是 BaldrSky.exe；不应用 SteamFix、VideoOverlayFix、HighDpiFix 或 VEH/VCH，只保留 D3D9 后端转发。",true);
+        LogText("[安全] 当前主程序不是 BaldrSky.exe；不应用 BALDR SKY 专用 SteamFix、InstallScriptFix、VideoOverlayFix、HighDpiFix、PixelBoundaryFix 或 VEH/VCH，只保留 D3D9 后端转发。",true);
         return;
     }
 
+    // Steam 的 install.vdf 在创建 BaldrSky.exe 之前会写入 DPIUNAWARE/VISTARTM。
+    // 当前第一次进程如果已经被这些 Shim 创建出来，我们不会为了“修第一轮”而打断游戏；
+    // 这里只静默净化 install.vdf 和 HKCU Layers，为下一次及后续启动建立干净环境。
+    if (g_cfg.enableSteamInstallScriptFix) RepairSteamInstallScriptAndLayersOnce();
+    else LogText("[InstallScript修复] 已由 INI 关闭；不修改 install.vdf 或 AppCompatFlags\\Layers。",true);
+
     // 高 DPI 必须尽量早于真正的图形后端和后续窗口/设备工作。
-    // 因此主程序身份验证通过后，第一个执行的兼容动作就是 DPI 设置。
+    // install.vdf 净化放在它前面只是为了先清理持久化配置；
+    // 当前进程的 AppCompat 已经在 CreateProcess 阶段决定，所以第一次仍可能无法改变 DPI。
     ApplyHighDpiFixOnce();
 
-    if (g_cfg.enableSteamFix) {
-        RepairSteamPatchBySignatureOnce();
-    } else {
-        LogText("[SteamFix] 已由 INI 关闭，不扫描/修改 Steam 补丁。",true);
-    }
+    // SteamFix 是 Steam 版启动必需的核心修复，test13 起永久开启。
+    RepairSteamPatchBySignatureOnce();
 
-    if (g_cfg.enableVideoOverlayFix) StartOverlayGuardOnce();
-    else LogText("[视频修复] 已由 INI 关闭。",true);
+    // test12：先通过运行时结构特征定位像素混合边界故障点、目标对象栈来源和安全续接，
+    // 然后优先安装“异常发生前”的内联边界检查。
+    // 这个扫描发生在 Direct3DCreate9 时，此时 BaldrSky.exe 的主代码已经解包到内存。
+    InitializePixelBoundaryFixBySignatureOnce();
 
-    if (g_cfg.enableCrashDiagnostics) InstallVehOnce();
-    else LogText("[诊断] VEH/VCH 崩溃诊断已由 INI 关闭。",true);
+    // VideoOverlayFix 是高频视频黑屏兼容修复，test13 起永久开启。
+    StartOverlayGuardOnce();
+
+    // test14 正常模式同样不需要为 PixelBoundaryFix 依赖 VEH：像素越界在 CPU 执行非法读取之前就被裁掉。
+    // 只有两种情况才安装异常处理器：
+    //   1) 用户主动打开 CrashDiagnostics；
+    //   2) PixelBoundaryFix 已定位成功，但内联补丁安装失败，需要 test11 精确恢复兜底。
+    bool needPixelFallback = g_pixelSignatureReady && !g_pixelInlineInstalled;
+
+    // “纯诊断” VEH/VCH 只有在日志真正开启时才有意义。
+    // 这样发布默认 EnableLog=0 时没有额外异常处理开销；用户只要改 EnableLog=1，
+    // 因为 EnableCrashDiagnostics 默认就是 1，会自动得到完整 AV/栈/寄存器日志。
+    bool needGenericCrashDiagnostics = g_cfg.enableLog && g_cfg.enableCrashDiagnostics;
+
+    // PixelBoundaryFix 的应急回退是核心稳定性逻辑，不属于“日志诊断”。
+    // 所以即使 EnableLog=0，只要内联补丁安装失败，仍必须安装 VEH/VCH 来执行 test11 的精确恢复。
+    if (needGenericCrashDiagnostics || needPixelFallback) InstallVehOnce();
+    else LogDetail("[诊断] PixelBoundaryFix 已使用内联边界检查；当前无需安装 VEH/VCH。",true);
 }
 
 // ============================================================================
@@ -1900,32 +2835,98 @@ static bool BuildSystemD3D9Path(char* outPath, UINT cap) {
 }
 
 static HMODULE g_backend=0;
+static HMODULE g_finalBackendTarget=0;
 static PFN_Direct3DCreate9 g_realDirect3DCreate9=0;
 
-static HMODULE LoadSelectedD3D9Backend() {
-    if (g_backend) return g_backend;
-    LoadConfigOnce();
+// ----------------------------------------------------------------------------
+// test14：ReShade 链式加载
+// ----------------------------------------------------------------------------
+//
+// 文件布局固定为同目录，不要求子目录：
+//
+//   BaldrSky.exe
+//   d3d9.dll             <- 本兼容层，永远占游戏真正的 d3d9 入口
+//   d3d9.ini
+//   ReShade32.dll        <- 可选；ReShade 32 位 d3d9.dll 改名
+//   ReShade.ini          <- ReShade 自己的配置；我们只管理 [PROXY] 两个键
+//   d3d9_backend.dll     <- 可选；例如 DXVK x32
+//
+// EnableReShade 与 Backend 是两个正交选项：
+//
+//   Backend 只回答“最终真正执行 D3D9 的 DLL 是谁”：
+//     0 = Auto：d3d9_backend.dll 能加载就用它，否则系统 d3d9.dll
+//     1 = Native：强制系统 d3d9.dll
+//     2 = Custom：强制 d3d9_backend.dll
+//
+//   EnableReShade 只回答“在本兼容层和最终后端之间，是否插入 ReShade32.dll”：
+//     0 = 游戏 -> 本兼容层 -> 最终后端
+//     1 = 游戏 -> 本兼容层 -> ReShade32.dll -> 最终后端
+//
+// ReShade 6.7 起提供官方 wrapper chaining：
+//   [PROXY]
+//   EnableProxyLibrary=1
+//   ProxyLibrary=<下一层 DLL 路径>
+//
+// 因此这里必须先选好最终后端、再写 ReShade.ini、最后才 LoadLibrary(ReShade32.dll)。
+// 如果先加载 ReShade 再写 INI，就太晚了：ReShade 会在自己的 DLL 初始化阶段读取配置。
+//
+// 我们使用“绝对路径”写 ProxyLibrary，而不是只写 d3d9_backend.dll：
+// 1) 自定义后端不受 SetDllDirectory / DLL 搜索顺序污染；
+// 2) 系统原生后端不能写成简单的 d3d9.dll，否则 ReShade 可能再次加载游戏目录里的本兼容层，
+//    形成 d3d9.dll -> ReShade -> d3d9.dll 的递归链。
 
-    // Backend=0：自动。优先 d3d9_backend.dll，没有则系统原生。
-    // Backend=1：强制系统原生，即使游戏目录存在 d3d9_backend.dll 也忽略。
-    // Backend=2：强制自定义；如果 d3d9_backend.dll 不存在则明确失败，不静默回退。
+static bool ConfigureReShadeProxyIni(const char* finalBackendPath) {
+    if (!finalBackendPath || !finalBackendPath[0]) return false;
+    if (!g_WritePrivateProfileStringA) {
+        LogError("[ReShade][错误] WritePrivateProfileStringA 不可用，无法安全配置 ReShade wrapper chain。",true);
+        return false;
+    }
+
+    char iniPath[520];
+    if (!BuildSiblingFilePath("ReShade.ini",iniPath,(UINT)sizeof(iniPath))) {
+        LogError("[ReShade][错误] 无法构造同目录 ReShade.ini 路径。",true);
+        return false;
+    }
+
+    // 只改这两个键。WritePrivateProfileStringA 会保留用户自己的 GENERAL、INPUT、DEPTH、
+    // PRESET 等其他 ReShade 配置，所以不会把已经安装好的 shader/preset 设置冲掉。
+    BOOL ok1=g_WritePrivateProfileStringA("PROXY","EnableProxyLibrary","1",iniPath);
+    BOOL ok2=g_WritePrivateProfileStringA("PROXY","ProxyLibrary",finalBackendPath,iniPath);
+    if (!ok1 || !ok2) {
+        char b[760]; UINT p=0;
+        AppendText(b,p,sizeof(b),"[ReShade][错误] 写入 ReShade.ini 的 [PROXY] 失败；将不加载 ReShade。路径=");
+        AppendText(b,p,sizeof(b),iniPath);
+        b[p]=0; LogError(b,true);
+        return false;
+    }
+
+    char b[980]; UINT p=0;
+    AppendText(b,p,sizeof(b),"[ReShade] 已配置 wrapper chain：ReShade.ini=");
+    AppendText(b,p,sizeof(b),iniPath);
+    AppendText(b,p,sizeof(b)," ProxyLibrary=");
+    AppendText(b,p,sizeof(b),finalBackendPath);
+    b[p]=0; LogText(b,true);
+    return true;
+}
+
+// 先只解决“最终后端是谁”，不考虑 ReShade。
+// 返回值既用来验证 DLL 确实可加载，也故意保留一个模块引用，避免我们确认后端可用后
+// 它又在 ReShade 真正调用之前被卸载。
+static HMODULE LoadFinalD3D9Target(char* outPath, UINT cap) {
+    if (!outPath || cap<16) return 0;
+    outPath[0]=0;
+
     if (g_cfg.backendMode!=1) {
-        // 只尝试加载“当前代理 DLL 同目录”的 d3d9_backend.dll。
-        // 这样 Backend=Auto/Custom 都不会因为 DLL 搜索路径被其他程序改变而误装载别处同名文件。
-        char customPath[520];
-        customPath[0]=0;
+        char customPath[520]; customPath[0]=0;
         bool haveCustomPath=BuildSiblingFilePath("d3d9_backend.dll",customPath,(UINT)sizeof(customPath));
         HMODULE custom=0;
         if (haveCustomPath) custom=g_LoadLibraryA(customPath);
 
         if (custom) {
-            g_backend=custom;
-            char b[700]; UINT p=0;
-            AppendText(b,p,sizeof(b),"[D3D9] 后端=CUSTOM，已加载=");
-            AppendText(b,p,sizeof(b),customPath);
-            b[p]=0; LogText(b,true);
-            LogHex("[D3D9][详细] 自定义后端句柄=",Ptr32(g_backend),true);
-            return g_backend;
+            CopyAsciiLimited(outPath,cap,customPath);
+            g_finalBackendTarget=custom;
+            LogDetail("[D3D9] 最终后端选择=CUSTOM（同目录 d3d9_backend.dll）。",true);
+            return custom;
         }
 
         if (g_cfg.backendMode==2) {
@@ -1936,9 +2937,9 @@ static HMODULE LoadSelectedD3D9Backend() {
             return 0;
         }
 
-        LogDetail("[D3D9] 同目录没有可加载的 d3d9_backend.dll，自动回退 Windows 原生 D3D9。",true);
+        LogDetail("[D3D9] Auto 模式下没有可加载的 d3d9_backend.dll，最终后端改用 Windows 原生 D3D9。",true);
     } else {
-        LogText("[D3D9] Backend=1，强制使用 Windows 原生 D3D9。",true);
+        LogText("[D3D9] Backend=1，最终后端强制使用 Windows 原生 D3D9。",true);
     }
 
     char systemPath[320];
@@ -1947,15 +2948,81 @@ static HMODULE LoadSelectedD3D9Backend() {
         return 0;
     }
 
-    {
-        char b[420]; UINT p=0;
-        AppendText(b,p,sizeof(b),"[D3D9] 系统后端路径=");
-        AppendText(b,p,sizeof(b),systemPath);
-        b[p]=0; LogText(b,true);
+    HMODULE native=g_LoadLibraryA(systemPath);
+    if (!native) {
+        LogError("[D3D9][错误] Windows 系统 d3d9.dll 无法加载。",true);
+        return 0;
     }
 
-    g_backend=g_LoadLibraryA(systemPath);
-    LogHex("[D3D9][详细] 原生后端句柄=",Ptr32(g_backend),true);
+    CopyAsciiLimited(outPath,cap,systemPath);
+    g_finalBackendTarget=native;
+    return native;
+}
+
+static HMODULE LoadSelectedD3D9Backend() {
+    if (g_backend) return g_backend;
+    LoadConfigOnce();
+
+    // 第一步：完全按照 Backend 语义选出最终真正的 D3D9 实现。
+    // 即使 EnableReShade=1，Backend 的含义也不会改变。
+    char finalPath[520]; finalPath[0]=0;
+    HMODULE finalTarget=LoadFinalD3D9Target(finalPath,(UINT)sizeof(finalPath));
+    if (!finalTarget) return 0;
+
+    // 第二步：如果用户没有启用 ReShade，直接保持 test13 起的直连路径。
+    if (!g_cfg.enableReShade) {
+        g_backend=finalTarget;
+        char b[760]; UINT p=0;
+        AppendText(b,p,sizeof(b),"[D3D9] ReShade=OFF；直接加载最终后端=");
+        AppendText(b,p,sizeof(b),finalPath);
+        b[p]=0; LogText(b,true);
+        return g_backend;
+    }
+
+    // 第三步：用户启用了 ReShade。先确认同目录确实有 ReShade32.dll。
+    // 文件不存在时不让游戏因为一个可选画质功能直接启动失败，而是回退原后端。
+    char reshadePath[520]; reshadePath[0]=0;
+    bool haveReShadePath=BuildSiblingFilePath("ReShade32.dll",reshadePath,(UINT)sizeof(reshadePath));
+    if (!haveReShadePath || !g_GetFileAttributesA ||
+        g_GetFileAttributesA(reshadePath)==INVALID_FILE_ATTRIBUTES_VALUE) {
+        LogError("[ReShade][警告] EnableReShade=1，但同目录没有 ReShade32.dll；已安全回退直接 D3D9 后端。",true);
+        g_backend=finalTarget;
+        return g_backend;
+    }
+
+    // ReShade 必须在 LoadLibrary 之前看到正确的 ProxyLibrary。
+    // 如果 INI 写入失败，也直接回退，不留下半条链。
+    if (!ConfigureReShadeProxyIni(finalPath)) {
+        g_backend=finalTarget;
+        return g_backend;
+    }
+
+    HMODULE reshade=g_LoadLibraryA(reshadePath);
+    if (!reshade) {
+        char b[760]; UINT p=0;
+        AppendText(b,p,sizeof(b),"[ReShade][警告] ReShade32.dll 加载失败；已安全回退直接 D3D9 后端。路径=");
+        AppendText(b,p,sizeof(b),reshadePath);
+        b[p]=0; LogError(b,true);
+        g_backend=finalTarget;
+        return g_backend;
+    }
+
+    // 只接受真正导出 Direct3DCreate9 的 32 位 ReShade D3D9 wrapper。
+    // 用户如果误放了 64 位 DLL、DXGI 版或其他同名文件，这里会拒绝把它当 D3D9 中间层。
+    PFN_Direct3DCreate9 reshadeCreate=
+        (PFN_Direct3DCreate9)g_GetProcAddress(reshade,"Direct3DCreate9");
+    if (!reshadeCreate) {
+        LogError("[ReShade][警告] ReShade32.dll 没有 Direct3DCreate9 导出；已安全回退直接 D3D9 后端。",true);
+        g_backend=finalTarget;
+        return g_backend;
+    }
+
+    g_backend=reshade;
+    char b[980]; UINT p=0;
+    AppendText(b,p,sizeof(b),"[ReShade][成功] 链式加载已启用：兼容层 -> ReShade32.dll -> ");
+    AppendText(b,p,sizeof(b),finalPath);
+    b[p]=0; LogText(b,true);
+    LogHex("[ReShade][详细] ReShade32.dll 句柄=",Ptr32(reshade),true);
     return g_backend;
 }
 
@@ -1966,6 +3033,10 @@ extern "C" void* __stdcall Direct3DCreate9(UINT SDKVersion) {
     // 代理 DLL 模式下，第一次 Direct3DCreate9 是最稳定的“正常初始化点”：
     // 已经离开 DllMain loader lock，但游戏还没有真正开始使用 D3D9 Device。
     InitializeCompatibilityCoreOnce();
+
+    // 某些启动流程会再次调用 Direct3DCreate9。若前一次调用后已经触发过内联裁剪，
+    // 这里顺便把累计次数写进日志，帮助确认“没有 AV，但边界修复确实命中过”。
+    LogPixelBoundaryInlineStatsIfChanged();
 
     LogDec("[D3D9] Direct3DCreate9 SDKVersion=",SDKVersion,true);
 
@@ -1993,7 +3064,9 @@ extern "C" void* __stdcall Direct3DCreate9(UINT SDKVersion) {
     void* real=g_realDirect3DCreate9(SDKVersion);
     LogHex("[D3D9][详细] 后端 IDirect3D9=",Ptr32(real),true);
 
-    // 仍然坚持 test9 的原则：真实 IDirect3D9 对象原样返回。
+    // 仍然坚持 test9 的原则：最终得到的 IDirect3D9 对象原样返回。
+// EnableReShade=1 时，这个对象会先经过 ReShade 自己的标准 D3D9 wrapper；
+// 本兼容层仍然不修改任何 IDirect3D9 / IDirect3DDevice9 vtable。
     // 不再碰 COM vtable，避免重演 test6 对原生 D3D9 的诊断污染。
     return real;
 }

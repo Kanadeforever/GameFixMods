@@ -1,0 +1,33 @@
+BALDR SKY v0.1-test11 中文版像素边界修复实机成功摘要
+日期：2026-09-27
+
+用户在中文版 Steam BALDR SKY 的存档界面进行高频复现测试：
+- 移动鼠标；
+- 连续切换多个存档槽；
+- 原版/test10 条件下可稳定触发 0x006C1B9B 读访问崩溃；
+- test11 开启 PixelBoundaryFix 后不再崩溃。
+
+代表性运行时证据：
+
+[像素边界修复][恢复] 次数=1
+EIP=0x006C1B9B
+EDI=0x1C6CFFFC
+TargetObject=0x09393378
+TargetBase=0x1C6D0000
+Delta=-4
+SkipEIP=0x006C1C14
+
+之后同一轮运行继续出现多次严格相同关系：
+- 次数 2~9：EDI=0x1C6CFFFC，TargetBase=0x1C6D0000，Delta=-4；
+- 次数 10：EDI=0x25CEFFFC，TargetBase=0x25CF0000，Delta=-4；
+- 次数 16：EDI=0x27DFFFFC，TargetBase=0x27E00000，Delta=-4；
+- 后续仍继续由同一安全续接点恢复，游戏不退出。
+
+每次恢复后 VCH 都把 EIP 精确续接到：
+0x006C1C14  add edi,4
+
+结论：
+1. 故障并非随机坏指针；不同目标表面地址下始终满足 EDI == TargetBase - 4。
+2. 每像素大小为 4 字节，因此这是目标 32bpp 缓冲区左边界前溢恰好 1 像素。
+3. 跳过这个越界像素、继续原函数自己的指针推进后，存档界面不再崩溃。
+4. test11 已完成“异常恢复验证”使命；test12 可以安全把同一判定前移为异常发生前的内联边界检查。
