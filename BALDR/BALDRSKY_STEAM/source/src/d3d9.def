@@ -1,0 +1,20 @@
+; BALDR SKY Steam Win11 兼容层的 Windows 模块定义文件。
+; 这个文件不是普通 C++ 源码，而是告诉 PE 链接器“最终 DLL 叫什么、对外公开哪些函数”。
+;
+; LIBRARY d3d9：
+;   告诉链接器把这个模块当作名为 d3d9 的 DLL。
+;   游戏目录中的成品文件也叫 d3d9.dll，这样 BaldrSky.exe 原本对系统 d3d9.dll 的加载
+;   会先命中我们的兼容层，再由兼容层转发到 Windows 原生 D3D9 或可选 d3d9_backend.dll。
+;
+; EXPORTS：
+;   下面列出游戏能从本 DLL 看见的导出函数。
+;   当前 BaldrSky.exe 静态导入的 D3D9 入口只有 Direct3DCreate9，因此只导出这一项。
+;
+; Direct3DCreate9=_Direct3DCreate9@4：
+;   左边是游戏期待的“没有装饰”的公开名字 Direct3DCreate9。
+;   右边是 32 位 __stdcall 编译后产生的内部符号名：前导下划线 + @4，
+;   其中 4 表示这个函数只有一个 4 字节参数 SDKVersion。
+;   通过这个映射，游戏看到的导出名仍然和真正的 Microsoft d3d9.dll 一致。
+LIBRARY d3d9
+EXPORTS
+    Direct3DCreate9=_Direct3DCreate9@4

@@ -1,0 +1,44 @@
+============================================================
+BALDR SKY Steam Win11 兼容层 v0.1-test8
+============================================================
+[启动] 加载模式=D3D9 代理 DLL；模块=F:\SteamLibrary\steamapps\common\Baldr Sky\d3d9.dll
+[配置] INI=F:\SteamLibrary\steamapps\common\Baldr Sky\d3d9.ini；日志=F:\SteamLibrary\steamapps\common\Baldr Sky\d3d9.log
+[配置] SteamFix=1 VideoOverlayFix=1 Backend=0 CrashDiagnostics=1 LogLevel=3
+[环境] 主程序=F:\SteamLibrary\steamapps\common\Baldr Sky\BaldrSky.exe
+[DPI] 审计结论：保持 Windows 默认 DPI 兼容行为，不自动修改进程 DPI awareness。
+[SteamFix][详细] 字符串 BaldrUtil.dll 命中数=1 address=0x00BC1235
+[SteamFix][详细] 字符串 InitSteam 命中数=1 address=0x00BC1288
+[SteamFix][详细] 字符串 CloseSteam 命中数=1 address=0x00BC1292
+[SteamFix][详细] 字符串 UpdateSteam 命中数=1 address=0x00BC129D
+[SteamFix][详细] 字符串 ResetAchievements 命中数=1 address=0x00BC12A9
+[SteamFix][详细] 字符串 GetAchievement 命中数=1 address=0x00BC12BB
+[SteamFix][详细] LoadLibrary结构 BaldrUtil=1 GDI32=1 IAT=0x0070315C
+[SteamFix][详细] Proc槽 InitSteam=1 slot=0x00BC11FC UpdateSteam=1 slot=0x00BC1204
+[SteamFix][详细] Steam初始化入口命中数=1 address=0x00BC104E
+[SteamFix][详细] UpdateSteam trampoline命中数=1 address=0x00BC1020 oldTarget=0x0060FF15 newTarget=0x0060FF18
+[SteamFix][成功] 版本无关语义签名全部唯一通过。
+SteamFix LoadLibraryA(GDI32) test ECX->EAX address=0x00BC10D0 status=PATCHED
+SteamFix LoadLibraryA(BaldrUtil) test ECX->EAX address=0x00BC112A status=PATCHED
+SteamFix UpdateSteam trampoline continuation +3 bytes address=0x00BC1037 status=PATCHED
+[SteamFix] 补丁汇总 p1=1 p2=1 p3=1
+[SteamFix][详细] 修复前/重初始化前 UpdateSteam槽=0x00BC1204 value=0x00000000
+[SteamFix] 正在调用特征定位到的 Steam 初始化入口=0x00BC104E
+[SteamFix] Steam 初始化入口已返回。
+[SteamFix] 修复后 UpdateSteam=0x5B8145A0 BaldrUtilModule=0x5B810000
+[SteamFix][成功] 特征码定位、三处修复与 UpdateSteam 初始化全部成功。
+[视频修复] 已把当前程序 EnableOverlays 设为0。程序=F:\SteamLibrary\steamapps\common\Baldr Sky\BaldrSky.exe 原值=不存在
+[视频修复] Overlay 守护线程已启动，TID=47044，检查间隔(ms)=500
+[诊断] VEH句柄=0x00FCC358
+[诊断] VCH句柄=0x00FCC3B8
+[D3D9] Direct3DCreate9 SDKVersion=2147483679
+[D3D9] 后端=CUSTOM，已加载=F:\SteamLibrary\steamapps\common\Baldr Sky\d3d9_backend.dll
+[D3D9][详细] 自定义后端句柄=0x54CC0000
+[D3D9][详细] 后端 Direct3DCreate9=0x54CC1530
+[D3D9][详细] 后端 IDirect3D9=0x053464F8
+[D3D9] Direct3DCreate9 SDKVersion=32
+[D3D9][详细] 后端 IDirect3D9=0x19B8F438
+
+用户实机补充结论：
+1. 英文版使用 DXVK x32 后端正常进入游戏。
+2. 多次测试并退出游戏后检查 HKCU\Software\Microsoft\Direct3D\Shims\EnableOverlays，当前 BaldrSky.exe 对应值确实保持为 0。
+3. 因此英文版 SteamFix + DXVK + VideoOverlayFix 在 test8 实机 PASS。
